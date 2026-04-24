@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "1.0.0",
+  "catalog": {
+    "id": "m3-2026-spring",
+    "name": "M3-2026春",
+    "publisher": "サンプル",
+    "publishedAt": "2026-04-20T00:00:00+09:00",
+    "updatedAt": "2026-04-20T00:00:00+09:00"
+  },
+  "event": {
+    "name": "M3-2026春",
+    "date": "2026-04-26",
+    "venue": "東京流通センター",
+    "dayNumber": 1
+  },
+  "circles": [
+    {
+      "id": "circle-001",
+      "name": "サンプルサークルA",
+      "author": "作者A",
+      "space": {
+        "block": "第一展示場",
+        "hall": "A",
+        "number": 1,
+        "sub": "a",
+        "raw": "A-01a"
+      },
+      "genre": "ボーカル",
+      "urls": {
+        "website": "https://example.com",
+        "twitter": "@sample_a"
+      },
+      "items": [
+        { "name": "新譜アルバム", "price": 1500, "type": "cd", "isNew": true },
+        { "name": "旧譜ベスト", "price": 1000, "type": "cd", "isNew": false }
+      ],
+      "tags": ["オリジナル", "ボーカル", "エレクトロニカ"]
+    },
+    {
+      "id": "circle-002",
+      "name": "サンプルサークルB",
+      "author": "作者B",
+      "space": {
+        "block": "第一展示場",
+        "hall": "B",
+        "number": 15,
+        "sub": "",
+        "raw": "B-15"
+      },
+      "genre": "インスト",
+      "urls": {},
+      "items": [
+        { "name": "ピアノソロ集", "price": 1000, "type": "cd", "isNew": true }
+      ],
+      "tags": ["オリジナル", "インスト", "ピアノ"]
+    }
+  ]
+}

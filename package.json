@@ -1,0 +1,32 @@
+{
+  "name": "doujin_buy_checker",
+  "version": "1.0.0",
+  "description": "同人即売会の購入リストを管理するPWA",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "LGPL-3.0-or-later",
+  "packageManager": "pnpm@10.33.0",
+  "dependencies": {
+    "@solidjs/router": "^0.16.1",
+    "dexie": "^4.4.2",
+    "solid-js": "^1.9.12",
+    "ulidx": "^2.4.1"
+  },
+  "devDependencies": {
+    "@kobalte/core": "^0.13.11",
+    "@unocss/reset": "^66.6.8",
+    "typescript": "^6.0.3",
+    "unocss": "^66.6.8",
+    "vite": "^8.0.10",
+    "vite-plugin-pwa": "^1.2.0",
+    "vite-plugin-solid": "^2.11.12",
+    "workbox-precaching": "^7.4.0",
+    "workbox-routing": "^7.4.0"
+  }
+}

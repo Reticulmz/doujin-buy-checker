@@ -1,0 +1,7 @@
+name = "doujin-buy-checker-sync"
+main = "src/index.ts"
+compatibility_date = "2024-12-01"
+
+[[kv_namespaces]]
+binding = "SHARE_KV"
+id = "placeholder-id"

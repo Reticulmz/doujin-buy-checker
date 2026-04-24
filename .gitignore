@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.devenv/
+.direnv/
+.devenv.flake.nix
+devenv.lock
+.idea/
+*.local
+.env
+.env.*

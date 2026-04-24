@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://doujin-buy-checker.example.com/schema/catalog/v1.json",
+  "title": "Doujin Catalog v1",
+  "type": "object",
+  "required": ["schemaVersion", "catalog", "event", "circles"],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "catalog": {
+      "type": "object",
+      "required": ["id", "name", "publishedAt"],
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "publisher": { "type": "string" },
+        "publishedAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "event": {
+      "type": "object",
+      "required": ["name", "date"],
+      "properties": {
+        "name": { "type": "string" },
+        "date": { "type": "string", "format": "date" },
+        "venue": { "type": "string" },
+        "dayNumber": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "circles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "author": { "type": "string" },
+          "space": {
+            "type": "object",
+            "properties": {
+              "block": { "type": "string" },
+              "hall": { "type": "string" },
+              "number": { "type": "integer" },
+              "sub": { "type": "string" },
+              "raw": { "type": "string" }
+            }
+          },
+          "genre": { "type": "string" },
+          "urls": {
+            "type": "object",
+            "properties": {
+              "website": { "type": "string", "format": "uri" },
+              "twitter": { "type": "string" },
+              "pixiv": { "type": "string" }
+            }
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "price": { "type": "number", "minimum": 0 },
+                "type": { "type": "string" },
+                "isNew": { "type": "boolean" }
+              }
+            }
+          },
+          "tags": {
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        }
+      }
+    }
+  },
+  "additionalProperties": true
+}
