@@ -2,6 +2,29 @@ import { createSignal, For, Show } from "solid-js";
 import { useLiveQuery } from "~/hooks/useLiveQuery";
 import { db } from "~/db/schema";
 
+async function apiShare(data: string): Promise<{ code: string; expiresAt: string }> {
+  const res = await fetch("/api/share", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ data }),
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as any).error || `HTTP ${res.status}`);
+  }
+  return res.json();
+}
+
+async function apiGet(code: string): Promise<string> {
+  const res = await fetch(`/api/share/${code}`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error((err as any).error || `HTTP ${res.status}`);
+  }
+  const json = await res.json() as { data: string };
+  return json.data;
+}
+
 export default function TransferPage() {
   const events = useLiveQuery(() => db.events.orderBy("date").reverse().toArray());
   const [mode, setMode] = createSignal<"send" | "receive">("send");
@@ -9,11 +32,14 @@ export default function TransferPage() {
   const [transferCode, setTransferCode] = createSignal("");
   const [status, setStatus] = createSignal("");
   const [receiveCode, setReceiveCode] = createSignal("");
+  const [sending, setSending] = createSignal(false);
+  const [receiving, setReceiving] = createSignal(false);
 
   const handleSend = async () => {
     const eventId = selectedEventId();
     if (!eventId) return;
 
+    setSending(true);
     setStatus("データを準備中...");
     try {
       const event = await db.events.get(eventId);
@@ -21,22 +47,24 @@ export default function TransferPage() {
       const items = await db.buyListItems.where("eventId").equals(eventId).toArray();
 
       const payload = { event, circles, items };
-      const json = JSON.stringify(payload);
+      const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
 
-      // For now, use a simple base64 approach for local transfer
-      // TODO: integrate CF Workers when available
-      const encoded = btoa(unescape(encodeURIComponent(json)));
-
-      // Generate a short code (simulated)
-      const code = Math.random().toString(36).substring(2, 8).toUpperCase();
-
-      // Store in localStorage temporarily
-      localStorage.setItem(`transfer_${code}`, encoded);
-
-      setTransferCode(code);
-      setStatus("転送コードが生成されました");
+      try {
+        // API経由で転送
+        const result = await apiShare(encoded);
+        setTransferCode(result.code);
+        setStatus(`転送コードが生成されました（有効期限: 24時間）`);
+      } catch {
+        // APIが使えない場合はlocalStorage fallback
+        const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+        localStorage.setItem(`transfer_${code}`, encoded);
+        setTransferCode(code);
+        setStatus("転送コードが生成されました（ローカルモード: 同一デバイスのみ）");
+      }
     } catch (err) {
       setStatus(`エラー: ${String(err)}`);
+    } finally {
+      setSending(false);
     }
   };
 
@@ -44,10 +72,19 @@ export default function TransferPage() {
     const code = receiveCode().toUpperCase().trim();
     if (!code) return;
 
+    setReceiving(true);
     setStatus("データを取得中...");
     try {
-      // Check localStorage first (same device transfer)
-      const encoded = localStorage.getItem(`transfer_${code}`);
+      let encoded: string | null = null;
+
+      try {
+        // API経由で取得
+        encoded = await apiGet(code);
+      } catch {
+        // APIが使えない場合はlocalStorage fallback
+        encoded = localStorage.getItem(`transfer_${code}`);
+      }
+
       if (!encoded) {
         setStatus("コードが見つかりません。有効期限が切れたか、無効なコードです。");
         return;
@@ -56,23 +93,18 @@ export default function TransferPage() {
       const json = decodeURIComponent(escape(atob(encoded)));
       const payload = JSON.parse(json);
 
-      // Import data
       await db.transaction("rw", [db.events, db.circles, db.buyListItems], async () => {
-        if (payload.event) {
-          await db.events.put(payload.event);
-        }
-        if (payload.circles?.length) {
-          await db.circles.bulkPut(payload.circles);
-        }
-        if (payload.items?.length) {
-          await db.buyListItems.bulkPut(payload.items);
-        }
+        if (payload.event) await db.events.put(payload.event);
+        if (payload.circles?.length) await db.circles.bulkPut(payload.circles);
+        if (payload.items?.length) await db.buyListItems.bulkPut(payload.items);
       });
 
       setStatus(`取り込み完了！イベント「${payload.event?.name}」のデータを復元しました。`);
       localStorage.removeItem(`transfer_${code}`);
     } catch (err) {
       setStatus(`エラー: ${String(err)}`);
+    } finally {
+      setReceiving(false);
     }
   };
 
@@ -85,8 +117,8 @@ export default function TransferPage() {
         <button
           class="flex-1 py-2 text-sm font-medium transition-colors"
           classList={{
-            "bg-primary-600 text-white": mode() === "send",
-            "bg-white dark:bg-gray-800": mode() !== "send",
+            "!bg-primary-600 !text-white": mode() === "send",
+            "!bg-white dark:!bg-gray-800": mode() !== "send",
           }}
           onClick={() => { setMode("send"); setStatus(""); }}
         >
@@ -95,8 +127,8 @@ export default function TransferPage() {
         <button
           class="flex-1 py-2 text-sm font-medium transition-colors"
           classList={{
-            "bg-primary-600 text-white": mode() === "receive",
-            "bg-white dark:bg-gray-800": mode() !== "receive",
+            "!bg-primary-600 !text-white": mode() === "receive",
+            "!bg-white dark:!bg-gray-800": mode() !== "receive",
           }}
           onClick={() => { setMode("receive"); setStatus(""); }}
         >
@@ -122,9 +154,9 @@ export default function TransferPage() {
           <button
             class="btn-primary w-full"
             onClick={handleSend}
-            disabled={!selectedEventId()}
+            disabled={!selectedEventId() || sending()}
           >
-            転送コードを生成
+            {sending() ? "生成中..." : "転送コードを生成"}
           </button>
 
           <Show when={transferCode()}>
@@ -157,9 +189,9 @@ export default function TransferPage() {
           <button
             class="btn-primary w-full"
             onClick={handleReceive}
-            disabled={receiveCode().trim().length < 4}
+            disabled={receiveCode().trim().length < 4 || receiving()}
           >
-            受信
+            {receiving() ? "受信中..." : "受信"}
           </button>
         </div>
       </Show>
