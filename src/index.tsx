@@ -13,6 +13,7 @@ const CatalogManagePage = lazy(() => import("./pages/CatalogManagePage"));
 const TransferPage = lazy(() => import("./pages/TransferPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const CatalogEditorPage = lazy(() => import("./pages/CatalogEditorPage"));
+const CatalogBrowserPage = lazy(() => import("./pages/CatalogBrowserPage"));
 
 // Apply saved theme on load
 const savedTheme = localStorage.getItem("theme");
@@ -34,6 +35,7 @@ render(
       <Route path="/transfer" component={TransferPage} />
       <Route path="/settings" component={SettingsPage} />
       <Route path="/catalog-editor" component={CatalogEditorPage} />
+      <Route path="/catalog-browse" component={CatalogBrowserPage} />
     </Router>
   ),
   document.getElementById("app")!

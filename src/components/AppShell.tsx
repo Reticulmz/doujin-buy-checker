@@ -1,5 +1,6 @@
 import { type ParentComponent } from "solid-js";
 import { A, useLocation } from "@solidjs/router";
+import { InstallBanner } from "./InstallBanner";
 
 export const AppShell: ParentComponent = (props) => {
   const location = useLocation();
@@ -7,13 +8,13 @@ export const AppShell: ParentComponent = (props) => {
   const navItems = [
     { href: "/", icon: "📋", label: "イベント" },
     { href: "/catalogs", icon: "📚", label: "カタログ" },
-    { href: "/catalog-editor", icon: "✏️", label: "作成" },
     { href: "/transfer", icon: "🔄", label: "転送" },
     { href: "/settings", icon: "⚙️", label: "設定" },
   ];
 
   return (
     <div class="min-h-screen flex flex-col">
+      <InstallBanner />
       <main class="flex-1 pb-16">{props.children}</main>
       <nav class="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 z-50">
         <div class="flex justify-around items-center h-14 max-w-lg mx-auto">

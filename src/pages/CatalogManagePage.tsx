@@ -1,68 +1,17 @@
 import { createSignal, For, Show } from "solid-js";
+import { A, useNavigate } from "@solidjs/router";
 import { useLiveQuery } from "~/hooks/useLiveQuery";
-import { db, type CatalogSubscription } from "~/db/schema";
-import { createEvent } from "~/db/repositories/events";
+import { db, type StoredCatalog } from "~/db/schema";
 import { ulid } from "ulidx";
-import { parseCatalogJson, importCatalogToEvent, type ImportResult } from "~/services/catalogImporter";
 
 export default function CatalogManagePage() {
-  const subscriptions = useLiveQuery(() => db.catalogSubscriptions.toArray());
-  const events = useLiveQuery(() => db.events.orderBy("date").reverse().toArray());
+  const navigate = useNavigate();
+  const catalogs = useLiveQuery(() => db.storedCatalogs.orderBy("updatedAt").reverse().toArray());
+  const [importing, setImporting] = createSignal(false);
+  const [urlInput, setUrlInput] = createSignal("");
+  const [showUrlForm, setShowUrlForm] = createSignal(false);
 
-  const [showAdd, setShowAdd] = createSignal(false);
-  const [newUrl, setNewUrl] = createSignal("");
-  const [newName, setNewName] = createSignal("");
-  const [importStatus, setImportStatus] = createSignal("");
-  const [importResult, setImportResult] = createSignal<ImportResult | null>(null);
-
-  const handleAdd = async (e: SubmitEvent) => {
-    e.preventDefault();
-    if (!newUrl().trim()) return;
-    const sub: CatalogSubscription = {
-      id: ulid(),
-      url: newUrl().trim(),
-      name: newName().trim() || newUrl().trim(),
-      lastFetchedAt: null,
-      lastHash: null,
-      status: "ok",
-      errorMessage: null,
-      createdAt: new Date().toISOString(),
-    };
-    await db.catalogSubscriptions.add(sub);
-    setNewUrl("");
-    setNewName("");
-    setShowAdd(false);
-  };
-
-  const handleDelete = async (id: string) => {
-    if (confirm("このカタログを削除しますか？")) {
-      await db.catalogSubscriptions.delete(id);
-    }
-  };
-
-  const handleFetch = async (sub: CatalogSubscription) => {
-    await db.catalogSubscriptions.update(sub.id, { status: "fetching" });
-    try {
-      const res = await fetch(sub.url);
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const text = await res.text();
-      const catalog = parseCatalogJson(text);
-      await db.catalogSubscriptions.update(sub.id, {
-        status: "ok",
-        lastFetchedAt: new Date().toISOString(),
-        errorMessage: null,
-      });
-      await promptImport(catalog, sub.id);
-    } catch (err) {
-      await db.catalogSubscriptions.update(sub.id, {
-        status: "error",
-        errorMessage: String(err),
-      });
-      setImportStatus(`エラー: ${String(err)}`);
-    }
-  };
-
-  const handleFileUpload = () => {
+  const importFromFile = () => {
     const input = document.createElement("input");
     input.type = "file";
     input.accept = ".json";
@@ -71,160 +20,176 @@ export default function CatalogManagePage() {
       if (!file) return;
       try {
         const text = await file.text();
-        const catalog = parseCatalogJson(text);
-        await promptImport(catalog, null);
-      } catch (err) {
-        setImportStatus(`エラー: ${String(err)}`);
-        setImportResult(null);
+        await saveCatalog(text, null);
+      } catch {
+        alert("JSONの読み込みに失敗しました");
       }
     };
     input.click();
   };
 
-  const promptImport = async (catalog: ReturnType<typeof parseCatalogJson> extends infer T ? T : never, sourceId: string | null) => {
-    const evts = events() ?? [];
-
-    // If matching event exists by name, use it; otherwise create new
-    let eventId: string;
-    const match = evts.find(
-      (e) => e.name === catalog.event.name || e.date === catalog.event.date,
-    );
-
-    if (match) {
-      const use = confirm(
-        `既存イベント「${match.name}」(${match.date}) に取り込みますか？\nキャンセルで新規イベント作成`,
-      );
-      if (use) {
-        eventId = match.id;
-      } else {
-        const ev = await createEvent({
-          name: catalog.event.name,
-          date: catalog.event.date,
-          venue: catalog.event.venue ?? "",
-          budget: 0,
-          eventType: "custom",
-        });
-        eventId = ev.id;
-      }
-    } else {
-      const ev = await createEvent({
-        name: catalog.event.name,
-        date: catalog.event.date,
-        venue: catalog.event.venue ?? "",
-        budget: 0,
-      });
-      eventId = ev.id;
+  const importFromUrl = async () => {
+    const url = urlInput().trim();
+    if (!url) return;
+    setImporting(true);
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      await saveCatalog(text, url);
+      setUrlInput("");
+      setShowUrlForm(false);
+    } catch (err) {
+      alert(`取得エラー: ${String(err)}`);
+    } finally {
+      setImporting(false);
     }
+  };
 
-    const result = await importCatalogToEvent(catalog, eventId, sourceId ?? `file-${ulid()}`);
-    setImportResult(result);
-    setImportStatus("");
+  const saveCatalog = async (jsonText: string, sourceUrl: string | null) => {
+    const data = JSON.parse(jsonText);
+    if (!data.circles || !Array.isArray(data.circles)) {
+      throw new Error("カタログJSON形式が不正です");
+    }
+    const now = new Date().toISOString();
+    const catalog: StoredCatalog = {
+      id: ulid(),
+      name: data.catalog?.name ?? data.event?.name ?? "無題",
+      eventName: data.event?.name ?? "",
+      eventDate: data.event?.date ?? "",
+      eventVenue: data.event?.venue ?? "",
+      eventType: data.event?.venue?.includes("流通センター") ? "m3" as const : "custom" as const,
+      circleCount: data.circles.length,
+      data: jsonText,
+      isDraft: false,
+      sourceUrl,
+      createdAt: now,
+      updatedAt: now,
+    };
+    await db.storedCatalogs.add(catalog);
+  };
+
+  const deleteCatalog = async (id: string) => {
+    if (confirm("このカタログを削除しますか？")) {
+      await db.storedCatalogs.delete(id);
+    }
+  };
+
+  const refreshFromUrl = async (catalog: StoredCatalog) => {
+    if (!catalog.sourceUrl) return;
+    try {
+      const res = await fetch(catalog.sourceUrl);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const text = await res.text();
+      const data = JSON.parse(text);
+      await db.storedCatalogs.update(catalog.id, {
+        name: data.catalog?.name ?? data.event?.name ?? catalog.name,
+        eventName: data.event?.name ?? catalog.eventName,
+        eventDate: data.event?.date ?? catalog.eventDate,
+        eventVenue: data.event?.venue ?? catalog.eventVenue,
+        circleCount: data.circles?.length ?? catalog.circleCount,
+        data: text,
+        updatedAt: new Date().toISOString(),
+      });
+    } catch (err) {
+      alert(`更新エラー: ${String(err)}`);
+    }
   };
 
   return (
     <div class="p-4 max-w-lg mx-auto">
-      <div class="flex items-center justify-between mb-4">
-        <h1 class="text-xl font-bold">カタログ管理</h1>
-        <button class="btn-primary text-sm" onClick={() => setShowAdd(!showAdd())}>
-          {showAdd() ? "キャンセル" : "+ URL追加"}
+      <h1 class="text-xl font-bold mb-4">カタログ</h1>
+
+      {/* Import actions */}
+      <div class="flex gap-2 mb-4">
+        <button class="btn-primary flex-1 text-sm" onClick={importFromFile}>
+          JSONから追加
+        </button>
+        <button class="btn-secondary flex-1 text-sm" onClick={() => setShowUrlForm(!showUrlForm())}>
+          {showUrlForm() ? "閉じる" : "URLから追加"}
         </button>
       </div>
 
-      {/* File upload */}
-      <div class="card mb-4">
-        <h2 class="font-bold mb-2">ファイルから取り込み</h2>
-        <p class="text-sm text-gray-500 dark:text-gray-400 mb-3">
-          カタログJSON（v1）をアップロードしてサークルを取り込みます
-        </p>
-        <button class="btn-primary w-full" onClick={handleFileUpload}>
-          JSONファイルを選択
-        </button>
-      </div>
-
-      {/* Import result */}
-      <Show when={importResult()}>
-        {(r) => (
-          <div class="card mb-4 bg-green-50 dark:bg-green-900/20 border-green-300 dark:border-green-700">
-            <div class="font-bold text-green-700 dark:text-green-300 mb-1">取り込み完了</div>
-            <div class="text-sm space-y-0.5">
-              <div>カタログ: {r().catalogName}</div>
-              <div>イベント: {r().eventName} ({r().eventDate})</div>
-              <div>サークル数: {r().totalCircles}（新規 {r().newCircles} / 更新 {r().updatedCircles}）</div>
-            </div>
-            <button
-              class="text-xs text-gray-500 mt-2"
-              onClick={() => setImportResult(null)}
-            >
-              閉じる
-            </button>
-          </div>
-        )}
-      </Show>
-
-      <Show when={importStatus()}>
-        <div class="card mb-4 bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-700 text-sm text-red-700 dark:text-red-300">
-          {importStatus()}
-          <button class="text-xs text-gray-500 ml-2" onClick={() => setImportStatus("")}>
-            閉じる
+      <Show when={showUrlForm()}>
+        <div class="card mb-4 space-y-2">
+          <input
+            type="url"
+            class="input-field text-sm"
+            placeholder="https://example.com/catalog.json"
+            value={urlInput()}
+            onInput={(e) => setUrlInput(e.currentTarget.value)}
+          />
+          <button
+            class="btn-primary w-full text-sm"
+            onClick={importFromUrl}
+            disabled={!urlInput().trim() || importing()}
+          >
+            {importing() ? "取得中..." : "取得して追加"}
           </button>
         </div>
       </Show>
 
-      {/* URL subscription form */}
-      <Show when={showAdd()}>
-        <form onSubmit={handleAdd} class="card mb-4 space-y-3">
-          <div>
-            <label class="block text-sm font-medium mb-1">フィードURL *</label>
-            <input type="url" class="input-field" value={newUrl()} onInput={(e) => setNewUrl(e.currentTarget.value)} placeholder="https://..." required />
-          </div>
-          <div>
-            <label class="block text-sm font-medium mb-1">表示名</label>
-            <input type="text" class="input-field" value={newName()} onInput={(e) => setNewName(e.currentTarget.value)} />
-          </div>
-          <button type="submit" class="btn-primary w-full">登録</button>
-        </form>
-      </Show>
-
-      {/* Subscription list */}
-      <Show when={subscriptions() && subscriptions()!.length > 0}>
-        <h2 class="font-bold mb-2 mt-4">URL購読</h2>
-        <div class="space-y-3">
-          <For each={subscriptions()}>
-            {(sub) => (
-              <div class="card">
-                <div class="flex items-start justify-between">
-                  <div class="min-w-0 flex-1">
-                    <div class="font-bold truncate">{sub.name}</div>
-                    <div class="text-xs text-gray-500 truncate">{sub.url}</div>
-                    <div class="text-xs text-gray-500 mt-1">
-                      <Show when={sub.lastFetchedAt} fallback="未取得">
-                        最終取得: {new Date(sub.lastFetchedAt!).toLocaleString("ja-JP")}
-                      </Show>
-                      {" "}
-                      <Show when={sub.status === "error"}>
-                        <span class="text-red-500">エラー: {sub.errorMessage}</span>
-                      </Show>
+      {/* Stored catalogs */}
+      <Show when={catalogs() && catalogs()!.length > 0}>
+        <h2 class="font-bold text-sm mb-2 text-gray-500">保存済みカタログ</h2>
+        <div class="space-y-2 mb-6">
+          <For each={catalogs()}>
+            {(catalog) => (
+              <div class="card !p-0 overflow-hidden">
+                <div class="flex items-stretch">
+                  <button
+                    class="flex-1 p-3 text-left min-w-0 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors"
+                    onClick={() => navigate(`/catalog-browse?id=${catalog.id}`)}
+                  >
+                    <div class="font-bold truncate">{catalog.name}</div>
+                    <div class="text-xs text-gray-500 mt-1 space-y-0.5">
+                      <div>{catalog.eventName} / {catalog.eventDate}</div>
+                      <div>{catalog.circleCount} サークル</div>
+                      <div class="text-gray-400">
+                        更新: {new Date(catalog.updatedAt).toLocaleString("ja-JP")}
+                      </div>
                     </div>
-                  </div>
-                  <div class="flex gap-1 ml-2">
+                  </button>
+                  <div class="flex flex-col border-l border-gray-200 dark:border-gray-700">
                     <button
-                      class="btn-secondary text-xs !px-2 !py-1"
-                      onClick={() => handleFetch(sub)}
-                      disabled={sub.status === "fetching"}
+                      class="flex-1 px-3 text-xs text-gray-400 hover:text-primary-600 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors"
+                      onClick={() => navigate(`/catalog-editor?id=${catalog.id}`)}
+                      title="編集"
                     >
-                      {sub.status === "fetching" ? "取得中..." : "取得"}
+                      ✏️
                     </button>
+                    <Show when={catalog.sourceUrl}>
+                      <button
+                        class="flex-1 px-3 text-xs text-gray-400 hover:text-primary-600 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors border-t border-gray-200 dark:border-gray-700"
+                        onClick={() => refreshFromUrl(catalog)}
+                        title="URLから更新"
+                      >
+                        🔄
+                      </button>
+                    </Show>
                     <button
-                      class="text-gray-400 hover:text-red-500 p-1"
-                      onClick={() => handleDelete(sub.id)}
+                      class="flex-1 px-3 text-xs text-gray-400 hover:text-red-500 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors border-t border-gray-200 dark:border-gray-700"
+                      onClick={() => deleteCatalog(catalog.id)}
                     >
-                      ✕
+                      🗑
                     </button>
                   </div>
                 </div>
               </div>
             )}
           </For>
+        </div>
+      </Show>
+
+      {/* Editor link */}
+      <A href="/catalog-editor" class="block text-center text-sm text-primary-600 dark:text-primary-400 hover:underline mt-4">
+        カタログを新規作成する →
+      </A>
+
+      <Show when={(!catalogs() || catalogs()!.length === 0) && !showUrlForm()}>
+        <div class="text-center text-gray-500 py-8 mt-4">
+          <p>保存済みカタログはありません</p>
+          <p class="text-sm mt-1">JSONファイルやURLからカタログを追加しましょう</p>
         </div>
       </Show>
     </div>

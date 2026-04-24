@@ -1,7 +1,10 @@
-import { createSignal, createMemo, createEffect, For, Show, onCleanup } from "solid-js";
+import { createSignal, createMemo, onMount, For, Show, onCleanup } from "solid-js";
+import { createStore, produce } from "solid-js/store";
 import { Portal } from "solid-js/web";
 import { ulid } from "ulidx";
-import { type EventType } from "~/db/schema";
+import { type EventType, type StoredCatalog, db } from "~/db/schema";
+import { useSearchParams, useNavigate } from "@solidjs/router";
+import { useLiveQuery } from "~/hooks/useLiveQuery";
 import { EVENT_PRESETS, validateSpace, inferM3Hall } from "~/services/eventPresets";
 
 interface CatalogItem {
@@ -70,65 +73,166 @@ function Cell(props: { value: string; onInput: (v: string) => void; placeholder?
 }
 
 export default function CatalogEditorPage() {
+  const [mode, setMode] = createSignal<"list" | "edit">("list");
   const [step, setStep] = createSignal<Step>(0);
+  const [catalogId, setCatalogId] = createSignal<string | null>(null);
   const [eventType, setEventType] = createSignal<EventType>("m3");
   const [eventName, setEventName] = createSignal("");
   const [eventDate, setEventDate] = createSignal("");
   const [eventVenue, setEventVenue] = createSignal("");
   const [publisherName, setPublisherName] = createSignal("");
+  const [saveStatus, setSaveStatus] = createSignal("");
 
-  createEffect(() => {
-    const preset = EVENT_PRESETS[eventType()];
-    if (preset.venue) setEventVenue(preset.venue);
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+
+  const storedCatalogs = useLiveQuery(() =>
+    db.storedCatalogs.orderBy("updatedAt").reverse().filter((c) => c.isDraft).toArray()
+  );
+
+  // Load from URL param ?id=xxx
+  onMount(async () => {
+    const id = searchParams.id;
+    if (!id) return;
+    const stored = await db.storedCatalogs.get(id);
+    if (stored) {
+      loadCatalogJson(stored.data);
+      setCatalogId(stored.id);
+      setMode("edit");
+      setStep(hasEventInfo() ? 1 : 0);
+    }
   });
-  const [circles, setCircles] = createSignal<CatalogCircle[]>([]);
+
+  const hasEventInfo = () => eventName().trim().length > 0 && eventDate().length > 0;
+
+  const changeEventType = (type: EventType) => {
+    setEventType(type);
+    const preset = EVENT_PRESETS[type];
+    if (preset.venue) setEventVenue(preset.venue);
+  };
+  const [circles, setCircles] = createStore<CatalogCircle[]>([]);
   const [modalCircleIndex, setModalCircleIndex] = createSignal<number | null>(null);
   const [copied, setCopied] = createSignal(false);
 
-  // --- Data helpers ---
+  // --- Serialize editor state to catalog JSON ---
+  const buildCatalogJson = () => JSON.stringify({
+    schemaVersion: "1.0.0",
+    catalog: { id: `catalog-${ulid()}`, name: eventName(), publisher: publisherName(), publishedAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+    event: { name: eventName(), date: eventDate(), venue: eventVenue(), dayNumber: 1 },
+    circles: [...circles],
+    _editorMeta: { eventType: eventType() },
+  }, null, 2);
+
+  const loadCatalogJson = (json: string) => {
+    const data = JSON.parse(json);
+    setEventType(data._editorMeta?.eventType ?? (data.event?.venue?.includes("流通センター") ? "m3" : "custom"));
+    setEventName(data.event?.name ?? data.eventName ?? "");
+    setEventDate(data.event?.date ?? data.eventDate ?? "");
+    setEventVenue(data.event?.venue ?? data.eventVenue ?? "");
+    setPublisherName(data.catalog?.publisher ?? data.publisherName ?? "");
+    const importedCircles: CatalogCircle[] = (data.circles ?? []).map((c: any) => ({
+      id: c.id || `circle-${ulid()}`, name: c.name ?? "", author: c.author ?? "",
+      space: { block: c.space?.block ?? "", hall: c.space?.hall ?? "", number: c.space?.number ?? 0, sub: c.space?.sub ?? "", raw: c.space?.raw ?? "" },
+      genre: c.genre ?? "",
+      urls: { website: c.urls?.website ?? "", twitter: c.urls?.twitter ?? "", pixiv: c.urls?.pixiv ?? "" },
+      items: Array.isArray(c.items) ? c.items.map((it: any) => ({ name: it.name ?? "", price: it.price ?? 0, type: it.type ?? "other", isNew: it.isNew ?? false })) : [],
+      tags: Array.isArray(c.tags) ? c.tags : [],
+    }));
+    setCircles(importedCircles);
+  };
+
+  const saveCatalog = async () => {
+    const now = new Date().toISOString();
+    const name = eventName().trim() || "無題のカタログ";
+    const data = buildCatalogJson();
+    const id = catalogId();
+
+    if (id) {
+      await db.storedCatalogs.update(id, {
+        name, eventName: eventName(), eventDate: eventDate(), eventVenue: eventVenue(),
+        eventType: eventType(), circleCount: circles.length, data, updatedAt: now,
+      });
+    } else {
+      const newId = ulid();
+      await db.storedCatalogs.add({
+        id: newId, name, eventName: eventName(), eventDate: eventDate(), eventVenue: eventVenue(),
+        eventType: eventType(), circleCount: circles.length, data, isDraft: true,
+        sourceUrl: null, createdAt: now, updatedAt: now,
+      });
+      setCatalogId(newId);
+    }
+    setSaveStatus("保存しました");
+    setTimeout(() => setSaveStatus(""), 2000);
+  };
+
+  const loadStoredCatalog = (catalog: StoredCatalog) => {
+    loadCatalogJson(catalog.data);
+    setCatalogId(catalog.id);
+    setMode("edit");
+    setStep(hasEventInfo() ? 1 : 0);
+  };
+
+  const deleteStoredCatalog = async (id: string) => {
+    if (confirm("この下書きを削除しますか？")) {
+      await db.storedCatalogs.delete(id);
+      if (catalogId() === id) setCatalogId(null);
+    }
+  };
+
+  const startNew = () => {
+    setCatalogId(null);
+    setEventType("m3");
+    setEventName("");
+    setEventDate("");
+    setEventVenue("");
+    setPublisherName("");
+    setCircles([]);
+    setStep(0);
+    setMode("edit");
+  };
+
+  const loadFromFile = () => {
+    const input = document.createElement("input");
+    input.type = "file";
+    input.accept = ".json";
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      try {
+        startNew();
+        loadCatalogJson(await file.text());
+        setStep(hasEventInfo() ? 1 : 0);
+      } catch { alert("JSONの読み込みに失敗しました"); }
+    };
+    input.click();
+  };
+
+  // --- Data helpers (fine-grained store updates) ---
   const updateCircle = (index: number, field: string, value: string) => {
-    setCircles((prev) => {
-      const updated = [...prev];
-      if (field === "name" || field === "author" || field === "genre") {
-        (updated[index] as any)[field] = value;
-      } else if (field === "spaceRaw") {
-        updated[index] = { ...updated[index], space: { ...updated[index].space, raw: value } };
-      } else if (field === "twitter") {
-        updated[index] = { ...updated[index], urls: { ...updated[index].urls, twitter: value } };
-      }
-      return updated;
-    });
+    if (field === "name" || field === "author" || field === "genre") {
+      setCircles(index, field as keyof CatalogCircle, value as any);
+    } else if (field === "spaceRaw") {
+      setCircles(index, "space", "raw", value);
+    } else if (field === "twitter") {
+      setCircles(index, "urls", "twitter", value);
+    }
   };
 
   const removeCircle = (index: number) => {
     if (modalCircleIndex() === index) setModalCircleIndex(null);
-    setCircles((prev) => prev.filter((_, i) => i !== index));
+    setCircles(produce((c) => c.splice(index, 1)));
   };
 
   const addItem = (ci: number) => {
-    setCircles((prev) => {
-      const u = [...prev];
-      u[ci] = { ...u[ci], items: [...u[ci].items, emptyItem()] };
-      return u;
-    });
+    setCircles(ci, "items", (items) => [...items, emptyItem()]);
   };
 
   const updateItem = (ci: number, ii: number, field: keyof CatalogItem, value: string | number | boolean) => {
-    setCircles((prev) => {
-      const u = [...prev];
-      const items = [...u[ci].items];
-      items[ii] = { ...items[ii], [field]: value };
-      u[ci] = { ...u[ci], items };
-      return u;
-    });
+    setCircles(ci, "items", ii, field, value as any);
   };
 
   const removeItem = (ci: number, ii: number) => {
-    setCircles((prev) => {
-      const u = [...prev];
-      u[ci] = { ...u[ci], items: u[ci].items.filter((_, i) => i !== ii) };
-      return u;
-    });
+    setCircles(ci, "items", produce((items) => items.splice(ii, 1)));
   };
 
   // --- Import ---
@@ -156,7 +260,7 @@ export default function CatalogEditorPage() {
             items: Array.isArray(c.items) ? c.items.map((it: any) => ({ name: it.name ?? "", price: it.price ?? 0, type: it.type ?? "other", isNew: it.isNew ?? false })) : [],
             tags: Array.isArray(c.tags) ? c.tags : [],
           }));
-          setCircles([...circles(), ...imported]);
+          setCircles(produce((c) => c.push(...imported)));
         }
       } catch { alert("JSONの読み込みに失敗しました"); }
     };
@@ -177,21 +281,14 @@ export default function CatalogEditorPage() {
         const cols = line.split(sep).map((c) => c.trim().replace(/^"|"$/g, ""));
         return { ...emptyCircle(), name: cols[0] || "", author: cols[1] || "", space: { block: "", hall: "", number: 0, sub: "", raw: cols[2] || "" }, genre: cols[3] || "", urls: { website: cols[4] || "", twitter: "", pixiv: "" } };
       });
-      setCircles([...circles(), ...imported]);
+      setCircles(produce((c) => c.push(...imported)));
     };
     input.click();
   };
 
   // --- Export ---
-  const buildJson = () => JSON.stringify({
-    schemaVersion: "1.0.0",
-    catalog: { id: `catalog-${ulid()}`, name: eventName(), publisher: publisherName(), publishedAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-    event: { name: eventName(), date: eventDate(), venue: eventVenue(), dayNumber: 1 },
-    circles: circles(),
-  } as CatalogData, null, 2);
-
   const exportJson = () => {
-    const json = buildJson();
+    const json = buildCatalogJson();
     const blob = new Blob([json], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
@@ -200,18 +297,51 @@ export default function CatalogEditorPage() {
   };
 
   const copyToClipboard = async () => {
-    await navigator.clipboard.writeText(buildJson());
+    await navigator.clipboard.writeText(buildCatalogJson());
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
 
+  // --- Sorting ---
+  type SortKey = "index" | "name" | "space" | "hall" | "genre";
+  const [sortKey, setSortKey] = createSignal<SortKey>("index");
+  const [sortAsc, setSortAsc] = createSignal(true);
+
+  const toggleSort = (key: SortKey) => {
+    if (sortKey() === key) {
+      setSortAsc(!sortAsc());
+    } else {
+      setSortKey(key);
+      setSortAsc(true);
+    }
+  };
+
+  const sortedIndices = createMemo(() => {
+    const indices = Array.from({ length: circles.length }, (_, i) => i);
+    const key = sortKey();
+    if (key === "index") return sortAsc() ? indices : indices.reverse();
+
+    indices.sort((a, b) => {
+      let va = "", vb = "";
+      if (key === "name") { va = circles[a].name; vb = circles[b].name; }
+      else if (key === "space") { va = circles[a].space.raw; vb = circles[b].space.raw; }
+      else if (key === "hall") { va = inferM3Hall(circles[a].space.raw); vb = inferM3Hall(circles[b].space.raw); }
+      else if (key === "genre") { va = circles[a].genre; vb = circles[b].genre; }
+      return va.localeCompare(vb, "ja");
+    });
+    return sortAsc() ? indices : indices.reverse();
+  });
+
+  const sortIndicator = (key: SortKey) =>
+    sortKey() === key ? (sortAsc() ? " ▲" : " ▼") : "";
+
   // --- Validation & nav ---
   const canProceed = createMemo(() => {
     if (step() === 0) return eventName().trim().length > 0 && eventDate().length > 0;
-    if (step() === 1) return circles().length > 0 && circles().every((c) => c.name.trim());
+    if (step() === 1) return circles.length > 0 && circles.every((c) => c.name.trim());
     return true;
   });
-  const totalItems = createMemo(() => circles().reduce((sum, c) => sum + c.items.length, 0));
+  const totalItems = createMemo(() => circles.reduce((sum, c) => sum + c.items.length, 0));
   const next = () => { if (step() < 2 && canProceed()) setStep((s) => (s + 1) as Step); };
   const prev = () => { if (step() > 0) setStep((s) => (s - 1) as Step); };
 
@@ -229,9 +359,63 @@ export default function CatalogEditorPage() {
 
   return (
     <div class="max-w-2xl mx-auto min-h-screen flex flex-col pb-20">
+      {/* ===== Draft list mode ===== */}
+      <Show when={mode() === "list"}>
+        <div class="p-4 space-y-4">
+          <div class="flex items-center justify-between">
+            <h1 class="text-xl font-bold">カタログ作成</h1>
+          </div>
+
+          <div class="flex gap-2">
+            <button class="btn-primary flex-1" onClick={startNew}>新規作成</button>
+            <button class="btn-secondary flex-1" onClick={loadFromFile}>JSONから開く</button>
+          </div>
+
+          <Show when={storedCatalogs() && storedCatalogs()!.length > 0}>
+            <h2 class="font-bold text-sm mt-2">保存済みの下書き</h2>
+            <div class="space-y-2">
+              <For each={storedCatalogs()}>
+                {(draft) => (
+                  <div class="card !p-3 flex items-center justify-between">
+                    <button class="flex-1 text-left min-w-0" onClick={() => loadStoredCatalog(draft)}>
+                      <div class="font-medium truncate">{draft.name}</div>
+                      <div class="text-xs text-gray-500 mt-0.5">
+                        <Show when={draft.eventType !== "custom"}>
+                          <span class="uppercase mr-2">{draft.eventType}</span>
+                        </Show>
+                        更新: {new Date(draft.updatedAt).toLocaleString("ja-JP")}
+                      </div>
+                    </button>
+                    <button
+                      class="text-gray-400 hover:text-red-500 p-2"
+                      onClick={() => deleteStoredCatalog(draft.id)}
+                    >✕</button>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+
+          <Show when={!storedCatalogs() || storedCatalogs()!.length === 0}>
+            <div class="text-center text-gray-500 py-8">
+              <p>保存済みの下書きはありません</p>
+              <p class="text-sm mt-1">「新規作成」で始めましょう</p>
+            </div>
+          </Show>
+        </div>
+      </Show>
+
+      {/* ===== Editor mode ===== */}
+      <Show when={mode() === "edit"}>
       {/* Step indicator */}
       <div class="sticky top-0 z-10 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 pt-3 pb-4">
-        <h1 class="text-lg font-bold mb-3">カタログ作成</h1>
+        <div class="flex items-center gap-2 mb-3">
+          <button class="text-gray-500 touch-target" onClick={() => setMode("list")}>←</button>
+          <h1 class="text-lg font-bold flex-1 truncate">{eventName() || "カタログ作成"}</h1>
+          <button class="btn-secondary text-xs !px-3" onClick={saveCatalog}>
+            {saveStatus() || "保存"}
+          </button>
+        </div>
         <div class="flex items-center gap-1">
           {STEPS.map((s, i) => (
             <>
@@ -272,7 +456,7 @@ export default function CatalogEditorPage() {
                         "!bg-primary-600 !border-primary-600 !text-white": eventType() === type,
                         "!bg-white !border-gray-300 !text-gray-800 dark:!bg-gray-700 dark:!border-gray-600 dark:!text-gray-200": eventType() !== type,
                       }}
-                      onClick={() => setEventType(type)}
+                      onClick={() => changeEventType(type)}
                     >
                       {EVENT_PRESETS[type].label}
                     </button>
@@ -320,7 +504,7 @@ export default function CatalogEditorPage() {
           <div class="space-y-3">
             <div class="flex items-center justify-between">
               <p class="text-sm text-gray-500 dark:text-gray-400">
-                サークル <span class="font-bold text-gray-700 dark:text-gray-200">{circles().length}</span> 件
+                サークル <span class="font-bold text-gray-700 dark:text-gray-200">{circles.length}</span> 件
                 <Show when={totalItems() > 0}>
                   <span class="ml-2">/ 頒布物 <span class="font-bold text-gray-700 dark:text-gray-200">{totalItems()}</span> 点</span>
                 </Show>
@@ -339,34 +523,36 @@ export default function CatalogEditorPage() {
                 <table class="w-full text-sm border-collapse">
                   <thead>
                     <tr>
-                      <th class={`${th} w-8 text-center`}>#</th>
-                      <th class={`${th} min-w-32`}>サークル名</th>
+                      <th class={`${th} w-8 text-center cursor-pointer select-none`} onClick={() => toggleSort("index")}>#{ sortIndicator("index")}</th>
+                      <th class={`${th} min-w-32 cursor-pointer select-none`} onClick={() => toggleSort("name")}>サークル名{sortIndicator("name")}</th>
                       <th class={`${th} min-w-24`}>代表者</th>
-                      <th class={`${th} w-24`}>スペース</th>
+                      <th class={`${th} w-24 cursor-pointer select-none`} onClick={() => toggleSort("space")}>スペース{sortIndicator("space")}</th>
                       <Show when={eventType() === "m3"}>
-                        <th class={`${th} w-28`}>ホール</th>
+                        <th class={`${th} w-28 cursor-pointer select-none`} onClick={() => toggleSort("hall")}>ホール{sortIndicator("hall")}</th>
                       </Show>
-                      <th class={`${th} w-24`}>ジャンル</th>
+                      <th class={`${th} w-24 cursor-pointer select-none`} onClick={() => toggleSort("genre")}>ジャンル{sortIndicator("genre")}</th>
                       <th class={`${th} w-28`}>Twitter</th>
                       <th class={`${th} w-16 text-center`}>頒布物</th>
                       <th class={`${th} w-8`}></th>
                     </tr>
                   </thead>
                   <tbody>
-                    <For each={circles()}>
-                      {(circle, index) => (
+                    <For each={sortedIndices()}>
+                      {(index) => {
+                        const circle = circles[index];
+                        return (
                         <tr
                           class={`${rowHover} cursor-pointer`}
-                          classList={{ "bg-primary-50/40 dark:bg-primary-900/15": modalCircleIndex() === index() }}
-                          onDblClick={() => setModalCircleIndex(index())}
+                          classList={{ "bg-primary-50/40 dark:bg-primary-900/15": modalCircleIndex() === index }}
+                          onDblClick={() => setModalCircleIndex(index)}
                         >
-                          <td class={`${td} text-center text-xs text-gray-300 dark:text-gray-600 tabular-nums`}>{index() + 1}</td>
-                          <td class={td}><Cell value={circle.name} onInput={(v) => updateCircle(index(), "name", v)} placeholder="サークル名" class="font-medium" /></td>
-                          <td class={td}><Cell value={circle.author} onInput={(v) => updateCircle(index(), "author", v)} placeholder="-" /></td>
+                          <td class={`${td} text-center text-xs text-gray-300 dark:text-gray-600 tabular-nums`}>{index + 1}</td>
+                          <td class={td}><Cell value={circle.name} onInput={(v) => updateCircle(index, "name", v)} placeholder="サークル名" class="font-medium" /></td>
+                          <td class={td}><Cell value={circle.author} onInput={(v) => updateCircle(index, "author", v)} placeholder="-" /></td>
                           <td class={td}>
                             <Cell
                               value={circle.space.raw}
-                              onInput={(v) => updateCircle(index(), "spaceRaw", v)}
+                              onInput={(v) => updateCircle(index, "spaceRaw", v)}
                               placeholder={EVENT_PRESETS[eventType()].spacePlaceholder || "-"}
                               class={`font-mono text-xs ${circle.space.raw && !validateSpace(eventType(), circle.space.raw).valid ? "!text-red-500" : ""}`}
                             />
@@ -376,8 +562,8 @@ export default function CatalogEditorPage() {
                               {circle.space.raw ? inferM3Hall(circle.space.raw) : "-"}
                             </td>
                           </Show>
-                          <td class={td}><Cell value={circle.genre} onInput={(v) => updateCircle(index(), "genre", v)} placeholder="-" /></td>
-                          <td class={td}><Cell value={circle.urls.twitter} onInput={(v) => updateCircle(index(), "twitter", v)} placeholder="@username" class="text-xs" /></td>
+                          <td class={td}><Cell value={circle.genre} onInput={(v) => updateCircle(index, "genre", v)} placeholder="-" /></td>
+                          <td class={td}><Cell value={circle.urls.twitter} onInput={(v) => updateCircle(index, "twitter", v)} placeholder="@username" class="text-xs" /></td>
                           <td class={`${td} text-center`}>
                             <button
                               class="text-xs tabular-nums px-2 py-0.5 rounded-full transition-colors"
@@ -385,23 +571,24 @@ export default function CatalogEditorPage() {
                                 "text-gray-400 hover:text-primary-600 hover:bg-primary-50 dark:hover:bg-primary-900/30": circle.items.length === 0,
                                 "text-primary-600 dark:text-primary-400 bg-primary-50 dark:bg-primary-900/30 font-medium": circle.items.length > 0,
                               }}
-                              onClick={() => setModalCircleIndex(index())}
+                              onClick={() => setModalCircleIndex(index)}
                             >
                               {circle.items.length > 0 ? `${circle.items.length} 点` : "+"}
                             </button>
                           </td>
                           <td class={`${td} text-center`}>
-                            <button class="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 transition-all p-1" onClick={() => removeCircle(index())}>✕</button>
+                            <button class="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 transition-all p-1" onClick={() => removeCircle(index)}>✕</button>
                           </td>
                         </tr>
-                      )}
+                        );
+                      }}
                     </For>
                   </tbody>
                 </table>
               </div>
               <button
                 class="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-primary-600 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors border-t border-gray-100 dark:border-gray-800"
-                onClick={() => setCircles([...circles(), emptyCircle()])}
+                onClick={() => setCircles(produce((c) => c.push(emptyCircle())))}
               >
                 <span class="text-lg leading-none">+</span>
                 <span>新規サークル</span>
@@ -420,7 +607,7 @@ export default function CatalogEditorPage() {
                 <div class="flex justify-between"><dt class="text-gray-500">日付</dt><dd>{eventDate()}</dd></div>
                 <Show when={eventVenue()}><div class="flex justify-between"><dt class="text-gray-500">会場</dt><dd>{eventVenue()}</dd></div></Show>
                 <Show when={publisherName()}><div class="flex justify-between"><dt class="text-gray-500">発行者</dt><dd>{publisherName()}</dd></div></Show>
-                <div class="border-t border-gray-200 dark:border-gray-700 pt-2 flex justify-between"><dt class="text-gray-500">サークル数</dt><dd class="font-bold">{circles().length}</dd></div>
+                <div class="border-t border-gray-200 dark:border-gray-700 pt-2 flex justify-between"><dt class="text-gray-500">サークル数</dt><dd class="font-bold">{circles.length}</dd></div>
                 <div class="flex justify-between"><dt class="text-gray-500">総頒布物数</dt><dd class="font-bold">{totalItems()}</dd></div>
               </dl>
             </div>
@@ -438,7 +625,7 @@ export default function CatalogEditorPage() {
                     </tr>
                   </thead>
                   <tbody>
-                    <For each={circles()}>
+                    <For each={circles}>
                       {(c) => (
                         <tr class="hover:bg-gray-50 dark:hover:bg-gray-700/30">
                           <td class={`${td} px-2 py-1.5`}>
@@ -463,16 +650,25 @@ export default function CatalogEditorPage() {
             </div>
 
             <div class="space-y-2">
-              <button class="btn-primary w-full py-3 text-base" onClick={exportJson}>JSONダウンロード</button>
-              <button class="btn-secondary w-full" onClick={copyToClipboard}>
-                {copied() ? "コピーしました!" : "クリップボードにコピー"}
+              <button class="btn-primary w-full py-3 text-base" onClick={async () => { await saveCatalog(); navigate("/catalogs"); }}>
+                カタログを保存
               </button>
+              <div class="flex gap-2">
+                <button class="btn-secondary flex-1 text-sm" onClick={exportJson}>JSONダウンロード</button>
+                <button class="btn-secondary flex-1 text-sm" onClick={copyToClipboard}>
+                  {copied() ? "コピーしました!" : "コピー"}
+                </button>
+              </div>
             </div>
           </div>
         </Show>
       </div>
 
+      </Show>
+      {/* ===== end editor mode ===== */}
+
       {/* Bottom navigation */}
+      <Show when={mode() === "edit"}>
       <div class="fixed bottom-14 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-4 py-2 z-40">
         <div class="flex gap-3 max-w-2xl mx-auto">
           <Show when={step() > 0}>
@@ -485,12 +681,13 @@ export default function CatalogEditorPage() {
           </Show>
         </div>
       </div>
+      </Show>
 
       {/* ===== Item Modal ===== */}
       <Show when={modalCircleIndex() !== null}>
         {(_) => {
           const ci = () => modalCircleIndex()!;
-          const circle = () => circles()[ci()];
+          const circle = () => circles[ci()];
           if (!circle()) { setModalCircleIndex(null); return null; }
 
           return (

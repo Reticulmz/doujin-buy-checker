@@ -56,11 +56,27 @@ export interface BuyListItem {
   updatedAt: string;
 }
 
+export interface StoredCatalog {
+  id: string;
+  name: string;
+  eventName: string;
+  eventDate: string;
+  eventVenue: string;
+  eventType: EventType;
+  circleCount: number;
+  data: string; // Catalog JSON
+  isDraft: boolean;
+  sourceUrl: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export const db = new Dexie("DoujinBuyChecker") as Dexie & {
   events: EntityTable<Event, "id">;
   catalogSubscriptions: EntityTable<CatalogSubscription, "id">;
   circles: EntityTable<Circle, "id">;
   buyListItems: EntityTable<BuyListItem, "id">;
+  storedCatalogs: EntityTable<StoredCatalog, "id">;
 };
 
 db.version(1).stores({
@@ -90,4 +106,60 @@ db.version(3).stores({
   return tx.table("events").toCollection().modify((event) => {
     if (event.eventType === undefined) event.eventType = "custom";
   });
+});
+
+db.version(4).stores({
+  events: "id, date",
+  catalogSubscriptions: "id, url",
+  circles: "id, eventId, [eventId+spaceNumber], externalId",
+  buyListItems: "id, eventId, circleId, [eventId+priority], [eventId+purchased]",
+  catalogDrafts: "id, updatedAt",
+});
+
+db.version(5).stores({
+  events: "id, date",
+  catalogSubscriptions: "id, url",
+  circles: "id, eventId, [eventId+spaceNumber], externalId",
+  buyListItems: "id, eventId, circleId, [eventId+priority], [eventId+purchased]",
+  catalogDrafts: "id, updatedAt",
+  storedCatalogs: "id, eventDate, updatedAt",
+});
+
+db.version(6).stores({
+  events: "id, date",
+  catalogSubscriptions: "id, url",
+  circles: "id, eventId, [eventId+spaceNumber], externalId",
+  buyListItems: "id, eventId, circleId, [eventId+priority], [eventId+purchased]",
+  catalogDrafts: null, // drop table
+  storedCatalogs: "id, eventDate, updatedAt",
+}).upgrade(async (tx) => {
+  // Migrate drafts to storedCatalogs
+  const drafts = await tx.table("catalogDrafts").toArray();
+  for (const draft of drafts) {
+    let eventName = "";
+    let eventDate = "";
+    let eventVenue = "";
+    let circleCount = 0;
+    try {
+      const parsed = JSON.parse(draft.data);
+      eventName = parsed.eventName ?? parsed.event?.name ?? "";
+      eventDate = parsed.eventDate ?? parsed.event?.date ?? "";
+      eventVenue = parsed.eventVenue ?? parsed.event?.venue ?? "";
+      circleCount = parsed.circles?.length ?? 0;
+    } catch {}
+    await tx.table("storedCatalogs").add({
+      id: draft.id,
+      name: draft.name,
+      eventName,
+      eventDate,
+      eventVenue,
+      eventType: draft.eventType ?? "custom",
+      circleCount,
+      data: draft.data,
+      isDraft: true,
+      sourceUrl: null,
+      createdAt: draft.createdAt,
+      updatedAt: draft.updatedAt,
+    });
+  }
 });
