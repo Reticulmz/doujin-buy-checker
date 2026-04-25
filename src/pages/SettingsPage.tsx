@@ -1,7 +1,7 @@
 import { createSignal, onMount, Show } from "solid-js";
 import { db } from "~/db/schema";
 import { confirm } from "~/components/ConfirmDialog";
-import { pwaInstalled, promptInstall } from "~/services/pwaInstall";
+import { canInstall, pwaInstalled, promptInstall } from "~/services/pwaInstall";
 
 export default function SettingsPage() {
   const [theme, setTheme] = createSignal<"light" | "dark" | "system">("system");
@@ -106,8 +106,9 @@ export default function SettingsPage() {
             <button
               class="btn-primary w-full text-sm"
               onClick={async () => {
-                const accepted = await promptInstall();
-                if (!accepted) {
+                if (canInstall()) {
+                  await promptInstall();
+                } else {
                   alert("お使いのブラウザが自動インストールに対応していない場合は、ブラウザのメニューから「ホーム画面に追加」でインストールしてください。");
                 }
               }}
