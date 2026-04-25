@@ -388,7 +388,7 @@ export default function BuyListPage() {
                           </Show>
                         </div>
                         <Show when={ci.circle.author}>
-                          <div class="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                          <div class="flex items-center gap-1 text-xs text-gray-500 dark:text-gray-400 mt-0.5">
                             <User size={12} class="shrink-0" />
                             <span class="truncate">{ci.circle.author}</span>
                           </div>
