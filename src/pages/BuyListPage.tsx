@@ -1,4 +1,4 @@
-import { createSignal, createMemo, createEffect, For, Show } from "solid-js";
+import { createSignal, createMemo, createEffect, onCleanup, For, Show } from "solid-js";
 import { A, useParams, useNavigate } from "@solidjs/router";
 import { useLiveQuery } from "~/hooks/useLiveQuery";
 import { db, type BuyListItem } from "~/db/schema";
@@ -89,6 +89,22 @@ export default function BuyListPage() {
       owner: ownerFilter(),
     }));
   });
+  // Scroll position restore
+  const scrollKey = `buylist-scroll-${params.eventId}`;
+  let scrollRestored = false;
+  createEffect(() => {
+    if (scrollRestored) return;
+    if (filteredAndSorted().length > 0) {
+      scrollRestored = true;
+      const saved = sessionStorage.getItem(scrollKey);
+      if (saved) {
+        requestAnimationFrame(() => window.scrollTo(0, Number(saved)));
+        sessionStorage.removeItem(scrollKey);
+      }
+    }
+  });
+  onCleanup(() => sessionStorage.setItem(scrollKey, String(window.scrollY)));
+
   const [editingName, setEditingName] = createSignal(false);
   const [editName, setEditName] = createSignal("");
 
@@ -201,12 +217,16 @@ export default function BuyListPage() {
   };
 
   const handleToggleCircle = async (circleId: string, completed: boolean) => {
+    const scrollY = window.scrollY;
     const circleItemsList = items()?.filter((i) => i.circleId === circleId) || [];
     if (circleItemsList.length > 0) {
-      await Promise.all(circleItemsList.map((i) => togglePurchased(i.id, completed)));
+      await db.transaction("rw", db.buyListItems, () =>
+        Promise.all(circleItemsList.map((i) => togglePurchased(i.id, completed)))
+      );
     } else {
       await toggleVisited(circleId, completed);
     }
+    requestAnimationFrame(() => window.scrollTo(0, scrollY));
   };
 
   const priorityBadge = (p: 1 | 2 | 3) => {

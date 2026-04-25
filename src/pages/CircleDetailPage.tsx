@@ -508,7 +508,8 @@ function PrioritySelect(props: { priority: 1 | 2 | 3; onChange: (p: 1 | 2 | 3) =
     <select
       class={`border-0 cursor-pointer min-h-7 ${priorityCls(props.priority)}`}
       value={props.priority}
-      onChange={(e) => props.onChange(Number(e.currentTarget.value) as 1 | 2 | 3)}
+      onClick={(e) => e.stopPropagation()}
+      onChange={(e) => { e.stopPropagation(); props.onChange(Number(e.currentTarget.value) as 1 | 2 | 3); }}
     >
       <option value={1}>必須</option>
       <option value={2}>欲しい</option>
