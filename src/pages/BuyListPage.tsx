@@ -55,16 +55,18 @@ export default function BuyListPage() {
           if (!dbCircle.externalId) continue;
           const cat = catMap.get(dbCircle.externalId);
           if (!cat) continue;
-          await db.circles.update(dbCircle.id, {
-            name: cat.name ?? dbCircle.name,
-            author: cat.author ?? dbCircle.author,
-            spaceNumber: cat.space?.raw ?? dbCircle.spaceNumber,
-            hall: evType === "m3" ? inferM3Hall(cat.space?.raw ?? "") : dbCircle.hall,
-            genre: cat.genre ?? dbCircle.genre,
-            websiteUrl: cat.urls?.website ?? dbCircle.websiteUrl,
-            twitterUrl: cat.urls?.twitter ?? dbCircle.twitterUrl,
-            updatedAt: now,
-          });
+          const updates: Record<string, string> = {};
+          if (!dbCircle.name && cat.name) updates.name = cat.name;
+          if (!dbCircle.author && cat.author) updates.author = cat.author;
+          if (!dbCircle.spaceNumber && cat.space?.raw) {
+            updates.spaceNumber = cat.space.raw;
+            if (evType === "m3") updates.hall = inferM3Hall(cat.space.raw);
+          }
+          if (!dbCircle.genre && cat.genre) updates.genre = cat.genre;
+          if (!dbCircle.websiteUrl && cat.urls?.website) updates.websiteUrl = cat.urls.website;
+          if (!dbCircle.twitterUrl && cat.urls?.twitter) updates.twitterUrl = cat.urls.twitter;
+          if (Object.keys(updates).length === 0) continue;
+          await db.circles.update(dbCircle.id, { ...updates, updatedAt: now });
         }
       } catch { /* ignore parse errors */ }
     })();
@@ -285,7 +287,9 @@ export default function BuyListPage() {
                       >
                         <div class="flex items-center gap-2">
                           <span class="font-bold truncate">{ci.circle.name}</span>
-                          <Show when={ci.items.length > 0}>
+                          <Show when={ci.items.length > 0} fallback={
+                            <span class="text-xs px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-medium">巡回</span>
+                          }>
                             {priorityBadge(ci.highestPriority)}
                           </Show>
                         </div>
