@@ -1,6 +1,12 @@
 import { createSignal, onMount, onCleanup, Show } from "solid-js";
 import { X } from "~/components/icons";
 
+declare global {
+  interface Window {
+    __pwaInstallPrompt: Event | null;
+  }
+}
+
 export function InstallBanner() {
   const [deferredPrompt, setDeferredPrompt] = createSignal<any>(null);
   const [show, setShow] = createSignal(false);
@@ -9,6 +15,13 @@ export function InstallBanner() {
   onMount(() => {
     if (localStorage.getItem("pwa-install-dismissed")) return;
     if (window.matchMedia("(display-mode: standalone)").matches) return;
+
+    // index.html のインラインスクリプトで早期捕捉済みのイベントを回収
+    if (window.__pwaInstallPrompt) {
+      setDeferredPrompt(window.__pwaInstallPrompt);
+      window.__pwaInstallPrompt = null;
+      setShow(true);
+    }
 
     const handleBeforeInstall = (e: Event) => {
       e.preventDefault();

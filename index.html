@@ -9,6 +9,13 @@
   </head>
   <body class="bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 min-h-screen">
     <div id="app"></div>
+    <script>
+      window.__pwaInstallPrompt = null;
+      window.addEventListener("beforeinstallprompt", function (e) {
+        e.preventDefault();
+        window.__pwaInstallPrompt = e;
+      });
+    </script>
     <script src="/src/index.tsx" type="module"></script>
   </body>
 </html>
