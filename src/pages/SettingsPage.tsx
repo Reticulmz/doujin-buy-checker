@@ -150,6 +150,14 @@ export default function SettingsPage() {
               <span class="text-gray-500">ビルド</span>
               <span class="font-mono text-xs text-gray-400">{__COMMIT_HASH__}</span>
             </div>
+            <div class="flex items-center justify-between">
+              <span class="text-gray-500">ライセンス</span>
+              <span class="text-sm">LGPL-3.0-or-later</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-gray-500">サードパーティ</span>
+              <a href="/third-party-licenses.txt" target="_blank" rel="noopener noreferrer" class="text-primary-600 dark:text-primary-400 hover:underline text-sm">ライセンス一覧</a>
+            </div>
           </div>
         </div>
       </div>

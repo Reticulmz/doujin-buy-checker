@@ -2,6 +2,7 @@ import { defineConfig } from "vite";
 import solid from "vite-plugin-solid";
 import UnoCSS from "unocss/vite";
 import { VitePWA } from "vite-plugin-pwa";
+import license from "rollup-plugin-license";
 import { resolve } from "path";
 import { execSync } from "child_process";
 
@@ -88,6 +89,18 @@ export default defineConfig({
       },
     }),
   ],
+  build: {
+    rollupOptions: {
+      plugins: [
+        license({
+          thirdParty: {
+            output: resolve(__dirname, "dist", "third-party-licenses.txt"),
+            includePrivate: false,
+          },
+        }),
+      ],
+    },
+  },
   server: {
     proxy: {
       "/api/share": {
