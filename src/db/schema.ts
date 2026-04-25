@@ -9,6 +9,7 @@ export interface Event {
   venue: string;
   budget: number;
   eventType: EventType;
+  sourceCatalogId: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -34,9 +35,10 @@ export interface Circle {
   spaceNumber: string;
   hall: string;
   genre: string;
-  url: string;
+  websiteUrl: string;
   twitterUrl: string;
   description: string;
+  visited: boolean;
   createdAt: string;
   updatedAt: string;
 }
@@ -46,11 +48,14 @@ export interface BuyListItem {
   eventId: string;
   circleId: string;
   itemName: string;
+  itemType: string;
+  isNew: boolean;
   price: number;
   quantity: number;
   priority: 1 | 2 | 3;
   purchased: boolean;
   purchasedAt: string | null;
+  requestedBy: string;
   note: string;
   createdAt: string;
   updatedAt: string;
@@ -134,7 +139,7 @@ db.version(6).stores({
   storedCatalogs: "id, eventDate, updatedAt",
 }).upgrade(async (tx) => {
   // Migrate drafts to storedCatalogs
-  const drafts = await tx.table("catalogDrafts").toArray();
+  const drafts = await tx.table("catalogDrafts").toArray() as any[];
   for (const draft of drafts) {
     let eventName = "";
     let eventDate = "";
@@ -162,4 +167,69 @@ db.version(6).stores({
       updatedAt: draft.updatedAt,
     });
   }
+});
+
+db.version(7).stores({
+  events: "id, date",
+  catalogSubscriptions: "id, url",
+  circles: "id, eventId, [eventId+spaceNumber], externalId",
+  buyListItems: "id, eventId, circleId, [eventId+priority], [eventId+purchased]",
+  storedCatalogs: "id, eventDate, updatedAt",
+}).upgrade((tx) => {
+  return tx.table("circles").toCollection().modify((circle: any) => {
+    if (circle.url !== undefined) {
+      circle.websiteUrl = circle.url;
+      delete circle.url;
+    }
+    if (circle.websiteUrl === undefined) circle.websiteUrl = "";
+  });
+});
+
+db.version(8).stores({
+  events: "id, date",
+  catalogSubscriptions: "id, url",
+  circles: "id, eventId, [eventId+spaceNumber], externalId",
+  buyListItems: "id, eventId, circleId, [eventId+priority], [eventId+purchased]",
+  storedCatalogs: "id, eventDate, updatedAt",
+}).upgrade((tx) => {
+  return tx.table("events").toCollection().modify((event: any) => {
+    if (event.sourceCatalogId === undefined) event.sourceCatalogId = null;
+  });
+});
+
+db.version(9).stores({
+  events: "id, date",
+  catalogSubscriptions: "id, url",
+  circles: "id, eventId, [eventId+spaceNumber], externalId",
+  buyListItems: "id, eventId, circleId, [eventId+priority], [eventId+purchased]",
+  storedCatalogs: "id, eventDate, updatedAt",
+}).upgrade((tx) => {
+  return tx.table("buyListItems").toCollection().modify((item: any) => {
+    if (item.itemType === undefined) item.itemType = "";
+    if (item.isNew === undefined) item.isNew = false;
+  });
+});
+
+db.version(10).stores({
+  events: "id, date",
+  catalogSubscriptions: "id, url",
+  circles: "id, eventId, [eventId+spaceNumber], externalId",
+  buyListItems: "id, eventId, circleId, [eventId+priority], [eventId+purchased]",
+  storedCatalogs: "id, eventDate, updatedAt",
+}).upgrade((tx) => {
+  return tx.table("buyListItems").toCollection().modify((item: any) => {
+    if (item.requestedBy === undefined) item.requestedBy = "";
+  });
+});
+
+db.version(11).stores({
+  events: "id, date",
+  catalogSubscriptions: "id, url",
+  circles: "id, eventId, [eventId+spaceNumber], externalId",
+  buyListItems: "id, eventId, circleId, [eventId+priority], [eventId+purchased]",
+  storedCatalogs: "id, eventDate, updatedAt",
+}).upgrade((tx) => {
+  return tx.table("circles").toCollection().modify((circle: any) => {
+    if (circle.visited === undefined) circle.visited = false;
+  });
 });

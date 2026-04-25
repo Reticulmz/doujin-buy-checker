@@ -14,7 +14,7 @@ export interface EventPreset {
 //   アルファベット+数字 → 第一展示場（例: A-01）
 //   ひらがな+数字     → 第二展示場1F（例: あ-01）
 //   カタカナ+数字     → 第二展示場2F（例: ア-01）
-const M3_SPACE_PATTERN = /^([A-Za-z]|[ぁ-ん]|[ァ-ヶ])-?\d{1,3}[a-z]?$/;
+const M3_SPACE_PATTERN = /^([A-Za-z]|[ぁ-ん]|[ァ-ヶ])-?\d{1,3}[a-z]*$/;
 
 export const EVENT_PRESETS: Record<EventType, EventPreset> = {
   m3: {

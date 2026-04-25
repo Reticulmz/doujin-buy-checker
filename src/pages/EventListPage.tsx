@@ -4,6 +4,9 @@ import { useLiveQuery } from "~/hooks/useLiveQuery";
 import { db, type EventType } from "~/db/schema";
 import { createEvent, deleteEvent } from "~/db/repositories/events";
 import { EVENT_PRESETS } from "~/services/eventPresets";
+import { ClipboardList, Calendar, MapPin, Wallet, Trash2, X } from "~/components/icons";
+import { confirm } from "~/components/ConfirmDialog";
+import { showToast } from "~/components/Toast";
 
 export default function EventListPage() {
   const events = useLiveQuery(() => db.events.orderBy("date").reverse().toArray());
@@ -39,8 +42,15 @@ export default function EventListPage() {
   };
 
   const handleDelete = async (id: string, eventName: string) => {
-    if (confirm(`「${eventName}」を削除しますか？関連するサークルと購入リストも削除されます。`)) {
+    const ok = await confirm({
+      title: "イベントを削除",
+      description: `「${eventName}」を削除しますか？関連するサークルと購入リストも削除されます。`,
+      confirmLabel: "削除",
+      variant: "danger",
+    });
+    if (ok) {
       await deleteEvent(id);
+      showToast("イベントを削除しました");
     }
   };
 
@@ -50,19 +60,23 @@ export default function EventListPage() {
 
       {/* Empty state - catalog first */}
       <Show when={events() && events()!.length === 0}>
-        <div class="space-y-4 py-4">
-          <div class="text-center text-gray-500 dark:text-gray-400">
-            <div class="text-4xl mb-3">📋</div>
-            <p class="font-medium text-gray-700 dark:text-gray-200">まだ購入リストがありません</p>
-            <p class="text-sm mt-1">カタログを取り込んで、欲しい頒布物をピックアップしましょう</p>
+        <div class="space-y-6 py-8">
+          <div class="text-center">
+            <div class="w-20 h-20 rounded-3xl bg-primary-50 dark:bg-primary-900/20 flex items-center justify-center mx-auto mb-4">
+              <ClipboardList size={36} class="text-primary-400" />
+            </div>
+            <h2 class="font-bold text-lg text-gray-800 dark:text-gray-100">購入リストを始めよう</h2>
+            <p class="text-sm text-gray-500 dark:text-gray-400 mt-2 leading-relaxed max-w-xs mx-auto">
+              カタログを取り込んで、イベントで欲しい<br />頒布物をピックアップしましょう
+            </p>
           </div>
 
-          <A href="/catalogs" class="btn-primary w-full block text-center py-3">
+          <A href="/catalogs" class="btn-primary w-full block text-center py-3.5 text-base">
             カタログから作成
           </A>
 
           <button
-            class="text-sm text-gray-500 dark:text-gray-400 w-full text-center hover:text-primary-600 transition-colors"
+            class="text-sm text-gray-400 dark:text-gray-500 w-full text-center hover:text-primary-600 transition-colors"
             onClick={() => setShowManual(true)}
           >
             カタログなしで手動作成 →
@@ -95,27 +109,27 @@ export default function EventListPage() {
                     <div class="flex items-center gap-2">
                       <h2 class="font-bold text-lg truncate">{event.name}</h2>
                       <Show when={event.eventType && event.eventType !== "custom"}>
-                        <span class="text-[10px] px-1.5 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 font-medium uppercase">
+                        <span class="text-xs px-1.5 py-0.5 rounded-full bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300 font-medium uppercase">
                           {event.eventType}
                         </span>
                       </Show>
                     </div>
                     <div class="text-sm text-gray-500 dark:text-gray-400 mt-1 space-y-0.5">
-                      <div>📅 {event.date}</div>
+                      <div class="flex items-center gap-1.5"><Calendar size={14} /> {event.date}</div>
                       <Show when={event.venue}>
-                        <div>📍 {event.venue}</div>
+                        <div class="flex items-center gap-1.5"><MapPin size={14} /> {event.venue}</div>
                       </Show>
                       <Show when={event.budget > 0}>
-                        <div>💰 ¥{event.budget.toLocaleString()}</div>
+                        <div class="flex items-center gap-1.5"><Wallet size={14} /> ¥{event.budget.toLocaleString()}</div>
                       </Show>
                     </div>
                   </A>
                   <button
-                    class="text-gray-400 hover:text-red-500 p-2 touch-target"
+                    class="text-gray-500 hover:text-red-500 p-2 touch-target"
                     onClick={() => handleDelete(event.id, event.name)}
                     title="削除"
                   >
-                    🗑
+                    <Trash2 size={18} />
                   </button>
                 </div>
               </div>
@@ -129,19 +143,19 @@ export default function EventListPage() {
         <form onSubmit={handleSubmit} class="card mt-4 space-y-3">
           <div class="flex items-center justify-between">
             <h2 class="font-bold text-sm">手動でイベントを作成</h2>
-            <button type="button" class="text-gray-400 text-sm" onClick={() => setShowManual(false)}>✕</button>
+            <button type="button" class="text-gray-500 p-1 touch-target" onClick={() => setShowManual(false)}><X size={18} /></button>
           </div>
 
           <div>
             <label class="block text-sm font-medium mb-1">イベント種別</label>
-            <div class="flex gap-2">
+            <div class="flex gap-2 p-1 rounded-2xl bg-gray-100 dark:bg-gray-800">
               {(Object.keys(EVENT_PRESETS) as EventType[]).map((type) => (
                 <button
                   type="button"
-                  class="flex-1 py-2 rounded-lg text-sm font-medium transition-colors border-2"
+                  class="flex-1 py-2 rounded-xl text-sm font-semibold transition-all"
                   classList={{
-                    "!bg-primary-600 !border-primary-600 !text-white": eventType() === type,
-                    "!bg-white !border-gray-300 !text-gray-800 dark:!bg-gray-700 dark:!border-gray-600 dark:!text-gray-200": eventType() !== type,
+                    "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm": eventType() === type,
+                    "text-gray-500 dark:text-gray-400": eventType() !== type,
                   }}
                   onClick={() => changeEventType(type)}
                 >

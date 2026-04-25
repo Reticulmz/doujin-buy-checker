@@ -11,6 +11,15 @@
 
   languages.typescript.enable = true;
 
+  packages = [
+    pkgs.playwright-driver.browsers
+    pkgs.playwright
+    pkgs.playwright-test
+  ];
+
+  env.PLAYWRIGHT_BROWSERS_PATH = "${pkgs.playwright-driver.browsers}";
+  env.PLAYWRIGHT_SKIP_VALIDATE_HOST_REQUIREMENTS = "true";
+
   process.managers.process-compose.package = pkgs.process-compose;
   process.manager.implementation = "process-compose";
 

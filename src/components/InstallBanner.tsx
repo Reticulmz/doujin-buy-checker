@@ -1,4 +1,5 @@
-import { createSignal, onMount, Show } from "solid-js";
+import { createSignal, onMount, onCleanup, Show } from "solid-js";
+import { X } from "~/components/icons";
 
 export function InstallBanner() {
   const [deferredPrompt, setDeferredPrompt] = createSignal<any>(null);
@@ -9,15 +10,22 @@ export function InstallBanner() {
     if (localStorage.getItem("pwa-install-dismissed")) return;
     if (window.matchMedia("(display-mode: standalone)").matches) return;
 
-    window.addEventListener("beforeinstallprompt", (e) => {
+    const handleBeforeInstall = (e: Event) => {
       e.preventDefault();
       setDeferredPrompt(e);
       setShow(true);
-    });
-
-    window.addEventListener("appinstalled", () => {
+    };
+    const handleInstalled = () => {
       setInstalled(true);
       setTimeout(() => setShow(false), 3000);
+    };
+
+    window.addEventListener("beforeinstallprompt", handleBeforeInstall);
+    window.addEventListener("appinstalled", handleInstalled);
+
+    onCleanup(() => {
+      window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
+      window.removeEventListener("appinstalled", handleInstalled);
     });
   });
 
@@ -52,7 +60,7 @@ export function InstallBanner() {
                   ホーム画面に追加すると、会場のオフライン環境でもネット接続なしで購入チェックできます
                 </p>
               </div>
-              <button class="text-primary-200 hover:text-white p-1" onClick={handleDismiss}>✕</button>
+              <button class="text-primary-200 hover:text-white p-2" aria-label="閉じる" onClick={handleDismiss}><X size={18} /></button>
             </div>
             <div class="flex gap-2 mt-3">
               <button

@@ -1,5 +1,7 @@
 import { createSignal, onMount } from "solid-js";
 import { db } from "~/db/schema";
+import { confirm } from "~/components/ConfirmDialog";
+import { showToast } from "~/components/Toast";
 
 export default function SettingsPage() {
   const [theme, setTheme] = createSignal<"light" | "dark" | "system">("system");
@@ -64,7 +66,13 @@ export default function SettingsPage() {
   };
 
   const handleClearAll = async () => {
-    if (confirm("すべてのデータを削除しますか？この操作は取り消せません。")) {
+    const ok = await confirm({
+      title: "全データ削除",
+      description: "すべてのデータを削除しますか？この操作は取り消せません。",
+      confirmLabel: "全削除",
+      variant: "danger",
+    });
+    if (ok) {
       await db.transaction("rw", [db.events, db.circles, db.buyListItems, db.catalogSubscriptions], async () => {
         await db.events.clear();
         await db.circles.clear();
@@ -83,13 +91,13 @@ export default function SettingsPage() {
         {/* Theme */}
         <div class="card">
           <h2 class="font-bold mb-2">テーマ</h2>
-          <div class="flex gap-2">
+          <div class="flex gap-2 p-1 rounded-2xl bg-gray-100 dark:bg-gray-800">
             {(["light", "dark", "system"] as const).map((t) => (
               <button
-                class="flex-1 py-2 rounded-lg text-sm font-medium transition-colors"
+                class="flex-1 py-2 rounded-xl text-sm font-semibold transition-all"
                 classList={{
-                  "bg-primary-600 text-white": theme() === t,
-                  "bg-gray-100 dark:bg-gray-700": theme() !== t,
+                  "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm": theme() === t,
+                  "text-gray-500 dark:text-gray-400": theme() !== t,
                 }}
                 onClick={() => applyTheme(t)}
               >
@@ -117,14 +125,32 @@ export default function SettingsPage() {
         </div>
 
         {/* About */}
-        <div class="card">
-          <h2 class="font-bold mb-2">このアプリについて</h2>
+        <div class="card space-y-3">
+          <h2 class="font-bold">このアプリについて</h2>
           <p class="text-sm text-gray-500">
             同人即売会 購入チェッカー v1.0.0
           </p>
-          <p class="text-sm text-gray-500 mt-1">
+          <p class="text-sm text-gray-500">
             オフラインファーストのPWAです。会場でネットワーク接続なしで動作します。
           </p>
+          <div class="border-t border-gray-200 dark:border-gray-700 pt-3 space-y-1.5 text-sm">
+            <div class="flex items-center justify-between">
+              <span class="text-gray-500">開発者</span>
+              <span class="font-medium">れみ</span>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-gray-500">Twitter / X</span>
+              <a href="https://x.com/Reticulmz" target="_blank" rel="noopener noreferrer" class="text-primary-600 dark:text-primary-400 hover:underline">@Reticulmz</a>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-gray-500">GitHub</span>
+              <a href="https://github.com/Reticulmz/doujin-buy-checker" target="_blank" rel="noopener noreferrer" class="text-primary-600 dark:text-primary-400 hover:underline">Reticulmz/doujin-buy-checker</a>
+            </div>
+            <div class="flex items-center justify-between">
+              <span class="text-gray-500">ビルド</span>
+              <span class="font-mono text-xs text-gray-400">{__COMMIT_HASH__}</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>

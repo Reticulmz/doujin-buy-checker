@@ -6,6 +6,9 @@ import { type EventType, type StoredCatalog, db } from "~/db/schema";
 import { useSearchParams, useNavigate } from "@solidjs/router";
 import { useLiveQuery } from "~/hooks/useLiveQuery";
 import { EVENT_PRESETS, validateSpace, inferM3Hall } from "~/services/eventPresets";
+import { fetchM3Circles, m3ToCatalogJson } from "~/services/m3Scraper";
+import { ArrowLeft, X } from "~/components/icons";
+import { ITEM_TYPES } from "~/components/QuickAddItemForm";
 
 interface CatalogItem {
   name: string;
@@ -20,6 +23,7 @@ interface CatalogCircle {
   author: string;
   space: { block: string; hall: string; number: number; sub: string; raw: string };
   genre: string;
+  description: string;
   urls: { website: string; twitter: string; pixiv: string };
   items: CatalogItem[];
   tags: string[];
@@ -40,19 +44,12 @@ const STEPS = [
   { label: "確認", short: "3" },
 ] as const;
 
-const ITEM_TYPES = [
-  { value: "cd", label: "CD" },
-  { value: "book", label: "本" },
-  { value: "goods", label: "グッズ" },
-  { value: "digital", label: "DL" },
-  { value: "other", label: "他" },
-];
 
 function emptyCircle(): CatalogCircle {
   return {
     id: `circle-${ulid()}`, name: "", author: "",
     space: { block: "", hall: "", number: 0, sub: "", raw: "" },
-    genre: "", urls: { website: "", twitter: "", pixiv: "" }, items: [], tags: [],
+    genre: "", description: "", urls: { website: "", twitter: "", pixiv: "" }, items: [], tags: [],
   };
 }
 
@@ -113,6 +110,8 @@ export default function CatalogEditorPage() {
   const [circles, setCircles] = createStore<CatalogCircle[]>([]);
   const [modalCircleIndex, setModalCircleIndex] = createSignal<number | null>(null);
   const [copied, setCopied] = createSignal(false);
+  const [m3Loading, setM3Loading] = createSignal(false);
+  const [m3Url, setM3Url] = createSignal("https://www.m3net.jp/attendance/circle2026s.php");
 
   // --- Serialize editor state to catalog JSON ---
   const buildCatalogJson = () => JSON.stringify({
@@ -133,7 +132,7 @@ export default function CatalogEditorPage() {
     const importedCircles: CatalogCircle[] = (data.circles ?? []).map((c: any) => ({
       id: c.id || `circle-${ulid()}`, name: c.name ?? "", author: c.author ?? "",
       space: { block: c.space?.block ?? "", hall: c.space?.hall ?? "", number: c.space?.number ?? 0, sub: c.space?.sub ?? "", raw: c.space?.raw ?? "" },
-      genre: c.genre ?? "",
+      genre: c.genre ?? "", description: c.description ?? "",
       urls: { website: c.urls?.website ?? "", twitter: c.urls?.twitter ?? "", pixiv: c.urls?.pixiv ?? "" },
       items: Array.isArray(c.items) ? c.items.map((it: any) => ({ name: it.name ?? "", price: it.price ?? 0, type: it.type ?? "other", isNew: it.isNew ?? false })) : [],
       tags: Array.isArray(c.tags) ? c.tags : [],
@@ -209,12 +208,14 @@ export default function CatalogEditorPage() {
 
   // --- Data helpers (fine-grained store updates) ---
   const updateCircle = (index: number, field: string, value: string) => {
-    if (field === "name" || field === "author" || field === "genre") {
+    if (field === "name" || field === "author" || field === "genre" || field === "description") {
       setCircles(index, field as keyof CatalogCircle, value as any);
     } else if (field === "spaceRaw") {
       setCircles(index, "space", "raw", value);
     } else if (field === "twitter") {
       setCircles(index, "urls", "twitter", value);
+    } else if (field === "website") {
+      setCircles(index, "urls", "website", value);
     }
   };
 
@@ -255,7 +256,7 @@ export default function CatalogEditorPage() {
           const imported: CatalogCircle[] = data.circles.map((c: any) => ({
             id: c.id || `circle-${ulid()}`, name: c.name ?? "", author: c.author ?? "",
             space: { block: c.space?.block ?? "", hall: c.space?.hall ?? "", number: c.space?.number ?? 0, sub: c.space?.sub ?? "", raw: c.space?.raw ?? "" },
-            genre: c.genre ?? "",
+            genre: c.genre ?? "", description: c.description ?? "",
             urls: { website: c.urls?.website ?? "", twitter: c.urls?.twitter ?? "", pixiv: c.urls?.pixiv ?? "" },
             items: Array.isArray(c.items) ? c.items.map((it: any) => ({ name: it.name ?? "", price: it.price ?? 0, type: it.type ?? "other", isNew: it.isNew ?? false })) : [],
             tags: Array.isArray(c.tags) ? c.tags : [],
@@ -286,6 +287,43 @@ export default function CatalogEditorPage() {
     input.click();
   };
 
+  const handleM3Import = async () => {
+    const url = m3Url().trim();
+    if (!url) return;
+    setM3Loading(true);
+    try {
+      const result = await fetchM3Circles(url);
+      if (result.circles.length === 0) {
+        alert("サークルが取得できませんでした");
+        return;
+      }
+      // Set event info
+      setEventType("m3");
+      if (!eventName()) setEventName("M3-2026春");
+      if (!eventDate()) setEventDate("2026-04-26");
+      setEventVenue("東京流通センター");
+
+      // Convert M3 circles to editor format
+      const imported: CatalogCircle[] = result.circles.map((c) => ({
+        id: c.id,
+        name: c.name,
+        author: "",
+        space: c.space,
+        genre: c.genre,
+        description: c.description,
+        urls: { website: c.urls.website, twitter: c.urls.twitter, pixiv: "" },
+        items: [],
+        tags: c.tags,
+      }));
+      setCircles(produce((arr) => arr.push(...imported)));
+      setStep(1);
+    } catch (err) {
+      alert(`M3取り込みエラー: ${String(err)}`);
+    } finally {
+      setM3Loading(false);
+    }
+  };
+
   // --- Export ---
   const exportJson = () => {
     const json = buildCatalogJson();
@@ -302,7 +340,8 @@ export default function CatalogEditorPage() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  // --- Sorting ---
+  // --- Search & Sorting ---
+  const [searchQuery, setSearchQuery] = createSignal("");
   type SortKey = "index" | "name" | "space" | "hall" | "genre";
   const [sortKey, setSortKey] = createSignal<SortKey>("index");
   const [sortAsc, setSortAsc] = createSignal(true);
@@ -314,10 +353,24 @@ export default function CatalogEditorPage() {
       setSortKey(key);
       setSortAsc(true);
     }
+    setPage(0);
   };
 
   const sortedIndices = createMemo(() => {
-    const indices = Array.from({ length: circles.length }, (_, i) => i);
+    let indices = Array.from({ length: circles.length }, (_, i) => i);
+
+    const q = searchQuery().toLowerCase();
+    if (q) {
+      indices = indices.filter((i) => {
+        const c = circles[i];
+        return c.name.toLowerCase().includes(q)
+          || c.space.raw.toLowerCase().includes(q)
+          || c.genre.toLowerCase().includes(q)
+          || c.urls.website.toLowerCase().includes(q)
+          || c.urls.twitter.toLowerCase().includes(q);
+      });
+    }
+
     const key = sortKey();
     if (key === "index") return sortAsc() ? indices : indices.reverse();
 
@@ -334,6 +387,15 @@ export default function CatalogEditorPage() {
 
   const sortIndicator = (key: SortKey) =>
     sortKey() === key ? (sortAsc() ? " ▲" : " ▼") : "";
+
+  // --- Pagination ---
+  const PAGE_SIZE = 50;
+  const [page, setPage] = createSignal(0);
+  const totalPages = createMemo(() => Math.max(1, Math.ceil(sortedIndices().length / PAGE_SIZE)));
+  const pagedIndices = createMemo(() => {
+    const start = page() * PAGE_SIZE;
+    return sortedIndices().slice(start, start + PAGE_SIZE);
+  });
 
   // --- Validation & nav ---
   const canProceed = createMemo(() => {
@@ -353,12 +415,12 @@ export default function CatalogEditorPage() {
   }
 
   // --- Styles ---
-  const th = "px-2 py-1.5 text-[11px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider text-left bg-gray-50 dark:bg-gray-800/80 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-1";
+  const th = "px-2 py-1.5 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-left bg-gray-50 dark:bg-gray-800/80 border-b border-gray-200 dark:border-gray-700 sticky top-0 z-1";
   const td = "border-b border-gray-100 dark:border-gray-800 relative";
   const rowHover = "group hover:bg-primary-50/30 dark:hover:bg-primary-900/10 transition-colors";
 
   return (
-    <div class="max-w-2xl mx-auto min-h-screen flex flex-col pb-20">
+    <div class="max-w-lg md:max-w-3xl lg:max-w-5xl mx-auto min-h-screen flex flex-col pb-20">
       {/* ===== Draft list mode ===== */}
       <Show when={mode() === "list"}>
         <div class="p-4 space-y-4">
@@ -389,7 +451,7 @@ export default function CatalogEditorPage() {
                     <button
                       class="text-gray-400 hover:text-red-500 p-2"
                       onClick={() => deleteStoredCatalog(draft.id)}
-                    >✕</button>
+                    ><X size={16} /></button>
                   </div>
                 )}
               </For>
@@ -408,9 +470,9 @@ export default function CatalogEditorPage() {
       {/* ===== Editor mode ===== */}
       <Show when={mode() === "edit"}>
       {/* Step indicator */}
-      <div class="sticky top-0 z-10 bg-gray-50 dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 px-4 pt-3 pb-4">
+      <div class="sticky top-0 z-10 glass px-4 pt-3 pb-4">
         <div class="flex items-center gap-2 mb-3">
-          <button class="text-gray-500 touch-target" onClick={() => setMode("list")}>←</button>
+          <button class="text-gray-500 touch-target" aria-label="戻る" onClick={() => setMode("list")}><ArrowLeft size={20} /></button>
           <h1 class="text-lg font-bold flex-1 truncate">{eventName() || "カタログ作成"}</h1>
           <button class="btn-secondary text-xs !px-3" onClick={saveCatalog}>
             {saveStatus() || "保存"}
@@ -428,7 +490,7 @@ export default function CatalogEditorPage() {
                 }}
                 onClick={() => { if (i <= step() || (i === step() + 1 && canProceed())) setStep(i as Step); }}
               >
-                <span class="w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold border"
+                <span class="w-5 h-5 rounded-full flex items-center justify-center text-xs font-bold border"
                   classList={{ "border-white/30": step() === i, "border-primary-300 dark:border-primary-700": step() > i, "border-gray-300 dark:border-gray-600": step() < i }}
                 >{step() > i ? "✓" : s.short}</span>
                 <span class="hidden sm:inline">{s.label}</span>
@@ -447,14 +509,14 @@ export default function CatalogEditorPage() {
               <p class="text-sm text-gray-500 dark:text-gray-400">カタログの基本情報を入力してください</p>
               <div>
                 <label class="block text-sm font-medium mb-1">イベント種別</label>
-                <div class="flex gap-2">
+                <div class="flex gap-2 p-1 rounded-2xl bg-gray-100 dark:bg-gray-800">
                   {(Object.keys(EVENT_PRESETS) as EventType[]).map((type) => (
                     <button
                       type="button"
-                      class="flex-1 py-2 rounded-lg text-sm font-medium transition-colors border-2"
+                      class="flex-1 py-2 rounded-xl text-sm font-semibold transition-all"
                       classList={{
-                        "!bg-primary-600 !border-primary-600 !text-white": eventType() === type,
-                        "!bg-white !border-gray-300 !text-gray-800 dark:!bg-gray-700 dark:!border-gray-600 dark:!text-gray-200": eventType() !== type,
+                        "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm": eventType() === type,
+                        "text-gray-500 dark:text-gray-400": eventType() !== type,
                       }}
                       onClick={() => changeEventType(type)}
                     >
@@ -494,7 +556,26 @@ export default function CatalogEditorPage() {
                 <button class="btn-secondary flex-1 text-sm" onClick={handleJsonImport}>JSON取込</button>
                 <button class="btn-secondary flex-1 text-sm" onClick={handleCsvImport}>CSV取込</button>
               </div>
-              <p class="text-xs text-gray-400 dark:text-gray-500">既存のカタログJSONやCSVを読み込んで編集を続けられます</p>
+              <div class="border-t border-gray-200 dark:border-gray-700 pt-2 mt-1">
+                <p class="text-sm font-medium mb-1.5">M3 サークルリスト取り込み</p>
+                <div class="flex gap-2">
+                  <input
+                    type="url"
+                    class="input-field flex-1 text-xs"
+                    placeholder="https://www.m3net.jp/attendance/..."
+                    value={m3Url()}
+                    onInput={(e) => setM3Url(e.currentTarget.value)}
+                  />
+                  <button
+                    class="btn-primary text-xs shrink-0 !px-3"
+                    onClick={handleM3Import}
+                    disabled={m3Loading() || !m3Url().trim()}
+                  >
+                    {m3Loading() ? "取得中..." : "取込"}
+                  </button>
+                </div>
+                <p class="text-xs text-gray-400 dark:text-gray-500 mt-1">m3net.jpのサークル参加リストページURLを入力</p>
+              </div>
             </div>
           </div>
         </Show>
@@ -515,29 +596,41 @@ export default function CatalogEditorPage() {
               </div>
             </div>
 
-            <p class="text-xs text-gray-400 dark:text-gray-500">サークル行をダブルクリックで頒布物を編集</p>
+            <input
+              type="search"
+              class="input-field text-sm"
+              placeholder="サークル名・スペース・ジャンルで検索..."
+              value={searchQuery()}
+              onInput={(e) => { setSearchQuery(e.currentTarget.value); setPage(0); }}
+            />
+
+            <p class="text-xs text-gray-400 dark:text-gray-500">
+              サークル行をダブルクリックで頒布物を編集
+              <Show when={searchQuery()}>
+                <span class="ml-2 text-primary-600 dark:text-primary-400">{sortedIndices().length} 件ヒット</span>
+              </Show>
+            </p>
 
             {/* Table */}
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
+            <div class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden shadow-sm">
               <div class="overflow-x-auto">
-                <table class="w-full text-sm border-collapse">
+                <table class="text-sm border-collapse min-w-[700px] w-full">
                   <thead>
                     <tr>
-                      <th class={`${th} w-8 text-center cursor-pointer select-none`} onClick={() => toggleSort("index")}>#{ sortIndicator("index")}</th>
-                      <th class={`${th} min-w-32 cursor-pointer select-none`} onClick={() => toggleSort("name")}>サークル名{sortIndicator("name")}</th>
-                      <th class={`${th} min-w-24`}>代表者</th>
-                      <th class={`${th} w-24 cursor-pointer select-none`} onClick={() => toggleSort("space")}>スペース{sortIndicator("space")}</th>
+                      <th class={`${th} w-20 cursor-pointer select-none`} onClick={() => toggleSort("space")}>スペース{sortIndicator("space")}</th>
                       <Show when={eventType() === "m3"}>
-                        <th class={`${th} w-28 cursor-pointer select-none`} onClick={() => toggleSort("hall")}>ホール{sortIndicator("hall")}</th>
+                        <th class={`${th} w-20 cursor-pointer select-none`} onClick={() => toggleSort("hall")}>ホール{sortIndicator("hall")}</th>
                       </Show>
-                      <th class={`${th} w-24 cursor-pointer select-none`} onClick={() => toggleSort("genre")}>ジャンル{sortIndicator("genre")}</th>
-                      <th class={`${th} w-28`}>Twitter</th>
-                      <th class={`${th} w-16 text-center`}>頒布物</th>
+                      <th class={`${th} min-w-32 cursor-pointer select-none`} onClick={() => toggleSort("name")}>サークル名{sortIndicator("name")}</th>
+                      <th class={`${th} min-w-28`}>Web</th>
+                      <th class={`${th} w-20 cursor-pointer select-none`} onClick={() => toggleSort("genre")}>ジャンル{sortIndicator("genre")}</th>
+                      <th class={`${th} w-24`}>Twitter</th>
+                      <th class={`${th} w-14 text-center`}>頒布物</th>
                       <th class={`${th} w-8`}></th>
                     </tr>
                   </thead>
                   <tbody>
-                    <For each={sortedIndices()}>
+                    <For each={pagedIndices()}>
                       {(index) => {
                         const circle = circles[index];
                         return (
@@ -546,9 +639,6 @@ export default function CatalogEditorPage() {
                           classList={{ "bg-primary-50/40 dark:bg-primary-900/15": modalCircleIndex() === index }}
                           onDblClick={() => setModalCircleIndex(index)}
                         >
-                          <td class={`${td} text-center text-xs text-gray-300 dark:text-gray-600 tabular-nums`}>{index + 1}</td>
-                          <td class={td}><Cell value={circle.name} onInput={(v) => updateCircle(index, "name", v)} placeholder="サークル名" class="font-medium" /></td>
-                          <td class={td}><Cell value={circle.author} onInput={(v) => updateCircle(index, "author", v)} placeholder="-" /></td>
                           <td class={td}>
                             <Cell
                               value={circle.space.raw}
@@ -562,6 +652,8 @@ export default function CatalogEditorPage() {
                               {circle.space.raw ? inferM3Hall(circle.space.raw) : "-"}
                             </td>
                           </Show>
+                          <td class={td}><Cell value={circle.name} onInput={(v) => updateCircle(index, "name", v)} placeholder="サークル名" class="font-medium" /></td>
+                          <td class={td}><Cell value={circle.urls.website} onInput={(v) => updateCircle(index, "website", v)} placeholder="https://..." class="text-xs" /></td>
                           <td class={td}><Cell value={circle.genre} onInput={(v) => updateCircle(index, "genre", v)} placeholder="-" /></td>
                           <td class={td}><Cell value={circle.urls.twitter} onInput={(v) => updateCircle(index, "twitter", v)} placeholder="@username" class="text-xs" /></td>
                           <td class={`${td} text-center`}>
@@ -577,7 +669,7 @@ export default function CatalogEditorPage() {
                             </button>
                           </td>
                           <td class={`${td} text-center`}>
-                            <button class="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 transition-all p-1" onClick={() => removeCircle(index)}>✕</button>
+                            <button class="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 transition-all p-1" onClick={() => removeCircle(index)}><X size={14} /></button>
                           </td>
                         </tr>
                         );
@@ -586,9 +678,30 @@ export default function CatalogEditorPage() {
                   </tbody>
                 </table>
               </div>
+              <Show when={totalPages() > 1}>
+                <div class="flex items-center justify-between px-3 py-2 border-t border-gray-100 dark:border-gray-800 text-xs">
+                  <button
+                    class="px-2 py-1 rounded text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30"
+                    disabled={page() === 0}
+                    onClick={() => setPage((p) => p - 1)}
+                  >
+                    <span class="flex items-center gap-1"><ArrowLeft size={14} /> 前</span>
+                  </button>
+                  <span class="text-gray-400 tabular-nums">
+                    {page() * PAGE_SIZE + 1}–{Math.min((page() + 1) * PAGE_SIZE, sortedIndices().length)} / {sortedIndices().length}
+                  </span>
+                  <button
+                    class="px-2 py-1 rounded text-gray-500 hover:bg-gray-100 dark:hover:bg-gray-700 disabled:opacity-30"
+                    disabled={page() >= totalPages() - 1}
+                    onClick={() => setPage((p) => p + 1)}
+                  >
+                    次 →
+                  </button>
+                </div>
+              </Show>
               <button
                 class="w-full flex items-center gap-2 px-3 py-2 text-sm text-gray-400 hover:text-primary-600 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors border-t border-gray-100 dark:border-gray-800"
-                onClick={() => setCircles(produce((c) => c.push(emptyCircle())))}
+                onClick={() => { setCircles(produce((c) => c.push(emptyCircle()))); setPage(totalPages() - 1); }}
               >
                 <span class="text-lg leading-none">+</span>
                 <span>新規サークル</span>
@@ -612,7 +725,7 @@ export default function CatalogEditorPage() {
               </dl>
             </div>
 
-            <div class="bg-white dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 overflow-hidden shadow-sm">
+            <div class="bg-white dark:bg-gray-800 rounded-2xl border border-gray-100 dark:border-gray-700 overflow-hidden shadow-sm">
               <div class="px-3 py-2 border-b border-gray-200 dark:border-gray-700"><h2 class="font-bold text-sm">データプレビュー</h2></div>
               <div class="overflow-x-auto max-h-72">
                 <table class="w-full text-sm border-collapse">
@@ -669,8 +782,8 @@ export default function CatalogEditorPage() {
 
       {/* Bottom navigation */}
       <Show when={mode() === "edit"}>
-      <div class="fixed bottom-14 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 px-4 py-2 z-40">
-        <div class="flex gap-3 max-w-2xl mx-auto">
+      <div class="fixed bottom-16 left-0 right-0 glass px-4 py-2 z-40">
+        <div class="flex gap-3 max-w-lg md:max-w-3xl lg:max-w-5xl mx-auto">
           <Show when={step() > 0}>
             <button class="btn-secondary flex-1" onClick={prev}>戻る</button>
           </Show>
@@ -713,11 +826,60 @@ export default function CatalogEditorPage() {
                         </Show>
                       </div>
                     </div>
-                    <button class="text-gray-400 hover:text-gray-600 p-1 text-lg" onClick={() => setModalCircleIndex(null)}>✕</button>
+                    <button class="text-gray-500 hover:text-gray-700 p-2" onClick={() => setModalCircleIndex(null)}><X size={18} /></button>
                   </div>
 
-                  {/* Item table */}
+                  {/* Scrollable content */}
                   <div class="flex-1 overflow-y-auto">
+                    {/* Circle details */}
+                    <div class="px-4 py-3 space-y-2 border-b border-gray-200 dark:border-gray-700">
+                      <div class="grid grid-cols-2 gap-2">
+                        <div>
+                          <label class="block text-xs font-medium text-gray-500 mb-0.5">代表者</label>
+                          <input type="text" class="input-field text-sm !py-1.5"
+                            value={circle().author}
+                            onInput={(e) => updateCircle(ci(), "author", e.currentTarget.value)}
+                            placeholder="代表者名"
+                          />
+                        </div>
+                        <div>
+                          <label class="block text-xs font-medium text-gray-500 mb-0.5">ジャンル</label>
+                          <input type="text" class="input-field text-sm !py-1.5"
+                            value={circle().genre}
+                            onInput={(e) => updateCircle(ci(), "genre", e.currentTarget.value)}
+                            placeholder="ジャンル"
+                          />
+                        </div>
+                      </div>
+                      <div class="grid grid-cols-2 gap-2">
+                        <div>
+                          <label class="block text-xs font-medium text-gray-500 mb-0.5">Webサイト</label>
+                          <input type="url" class="input-field text-sm !py-1.5"
+                            value={circle().urls.website}
+                            onInput={(e) => updateCircle(ci(), "website", e.currentTarget.value)}
+                            placeholder="https://..."
+                          />
+                        </div>
+                        <div>
+                          <label class="block text-xs font-medium text-gray-500 mb-0.5">Twitter / X</label>
+                          <input type="text" class="input-field text-sm !py-1.5"
+                            value={circle().urls.twitter}
+                            onInput={(e) => updateCircle(ci(), "twitter", e.currentTarget.value)}
+                            placeholder="@username"
+                          />
+                        </div>
+                      </div>
+                      <div>
+                        <label class="block text-xs font-medium text-gray-500 mb-0.5">説明</label>
+                        <textarea class="input-field text-sm !py-1.5" rows={2}
+                          value={circle().description}
+                          onInput={(e) => updateCircle(ci(), "description", e.currentTarget.value)}
+                          placeholder="サークルの説明文"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Item table */}
                     <Show when={circle().items.length > 0}>
                       <table class="w-full text-sm border-collapse">
                         <thead>
@@ -754,7 +916,7 @@ export default function CatalogEditorPage() {
                                     onChange={(e) => updateItem(ci(), ii(), "isNew", e.currentTarget.checked)} />
                                 </td>
                                 <td class={`${td} text-center`}>
-                                  <button class="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 transition-all p-1" onClick={() => removeItem(ci(), ii())}>✕</button>
+                                  <button class="opacity-0 group-hover:opacity-100 text-gray-300 hover:text-red-500 transition-all p-1" onClick={() => removeItem(ci(), ii())}><X size={14} /></button>
                                 </td>
                               </tr>
                             )}

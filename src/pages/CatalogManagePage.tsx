@@ -3,6 +3,8 @@ import { A, useNavigate } from "@solidjs/router";
 import { useLiveQuery } from "~/hooks/useLiveQuery";
 import { db, type StoredCatalog } from "~/db/schema";
 import { ulid } from "ulidx";
+import { Pencil, RefreshCw, Trash2 } from "~/components/icons";
+import { confirm } from "~/components/ConfirmDialog";
 
 export default function CatalogManagePage() {
   const navigate = useNavigate();
@@ -70,9 +72,13 @@ export default function CatalogManagePage() {
   };
 
   const deleteCatalog = async (id: string) => {
-    if (confirm("このカタログを削除しますか？")) {
-      await db.storedCatalogs.delete(id);
-    }
+    const ok = await confirm({
+      title: "カタログを削除",
+      description: "このカタログを削除しますか？",
+      confirmLabel: "削除",
+      variant: "danger",
+    });
+    if (ok) await db.storedCatalogs.delete(id);
   };
 
   const refreshFromUrl = async (catalog: StoredCatalog) => {
@@ -145,33 +151,33 @@ export default function CatalogManagePage() {
                     <div class="text-xs text-gray-500 mt-1 space-y-0.5">
                       <div>{catalog.eventName} / {catalog.eventDate}</div>
                       <div>{catalog.circleCount} サークル</div>
-                      <div class="text-gray-400">
+                      <div class="text-gray-500">
                         更新: {new Date(catalog.updatedAt).toLocaleString("ja-JP")}
                       </div>
                     </div>
                   </button>
                   <div class="flex flex-col border-l border-gray-200 dark:border-gray-700">
                     <button
-                      class="flex-1 px-3 text-xs text-gray-400 hover:text-primary-600 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors"
+                      class="flex-1 px-4 min-h-11 text-sm text-gray-500 hover:text-primary-600 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors"
                       onClick={() => navigate(`/catalog-editor?id=${catalog.id}`)}
                       title="編集"
                     >
-                      ✏️
+                      <Pencil size={16} />
                     </button>
                     <Show when={catalog.sourceUrl}>
                       <button
-                        class="flex-1 px-3 text-xs text-gray-400 hover:text-primary-600 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors border-t border-gray-200 dark:border-gray-700"
+                        class="flex-1 px-4 min-h-11 text-sm text-gray-500 hover:text-primary-600 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors border-t border-gray-200 dark:border-gray-700"
                         onClick={() => refreshFromUrl(catalog)}
                         title="URLから更新"
                       >
-                        🔄
+                        <RefreshCw size={16} />
                       </button>
                     </Show>
                     <button
-                      class="flex-1 px-3 text-xs text-gray-400 hover:text-red-500 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors border-t border-gray-200 dark:border-gray-700"
+                      class="flex-1 px-4 min-h-11 text-sm text-gray-500 hover:text-red-500 hover:bg-gray-50 dark:hover:bg-gray-700/30 transition-colors border-t border-gray-200 dark:border-gray-700"
                       onClick={() => deleteCatalog(catalog.id)}
                     >
-                      🗑
+                      <Trash2 size={16} />
                     </button>
                   </div>
                 </div>

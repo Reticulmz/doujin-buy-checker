@@ -11,6 +11,7 @@ interface CatalogJson {
     author?: string;
     space?: { block?: string; hall?: string; number?: number; sub?: string; raw?: string };
     genre?: string;
+    description?: string;
     urls?: { website?: string; twitter?: string; pixiv?: string };
     items?: { name: string; price: number; type?: string; isNew?: boolean }[];
     tags?: string[];
@@ -59,9 +60,9 @@ export async function importCatalogToEvent(
         spaceNumber: spaceRaw,
         hall: c.space?.hall ?? "",
         genre: c.genre ?? "",
-        url: c.urls?.website ?? "",
+        websiteUrl: c.urls?.website ?? "",
         twitterUrl: c.urls?.twitter ?? "",
-        description: "",
+        description: c.description ?? "",
         updatedAt: now,
       };
 

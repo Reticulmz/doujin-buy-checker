@@ -15,10 +15,12 @@
   "dependencies": {
     "@solidjs/router": "^0.16.1",
     "dexie": "^4.4.2",
+    "lucide-solid": "^1.11.0",
     "solid-js": "^1.9.12",
     "ulidx": "^2.4.1"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "^4.20260424.1",
     "@kobalte/core": "^0.13.11",
     "@unocss/reset": "^66.6.8",
     "typescript": "^6.0.3",

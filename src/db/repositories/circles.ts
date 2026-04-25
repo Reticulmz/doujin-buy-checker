@@ -10,14 +10,15 @@ export async function getCircle(id: string): Promise<Circle | undefined> {
 }
 
 export async function createCircle(
-  data: Pick<Circle, "eventId" | "name" | "author" | "spaceNumber" | "hall" | "genre" | "url" | "twitterUrl" | "description"> &
-    Partial<Pick<Circle, "catalogSourceId" | "externalId">>
+  data: Pick<Circle, "eventId" | "name" | "author" | "spaceNumber" | "hall" | "genre" | "websiteUrl" | "twitterUrl" | "description"> &
+    Partial<Pick<Circle, "catalogSourceId" | "externalId" | "visited">>
 ): Promise<Circle> {
   const now = new Date().toISOString();
   const circle: Circle = {
     id: ulid(),
     catalogSourceId: null,
     externalId: null,
+    visited: false,
     ...data,
     createdAt: now,
     updatedAt: now,
@@ -28,9 +29,13 @@ export async function createCircle(
 
 export async function updateCircle(
   id: string,
-  data: Partial<Pick<Circle, "name" | "author" | "spaceNumber" | "hall" | "genre" | "url" | "twitterUrl" | "description">>
+  data: Partial<Pick<Circle, "name" | "author" | "spaceNumber" | "hall" | "genre" | "websiteUrl" | "twitterUrl" | "description">>
 ): Promise<void> {
   await db.circles.update(id, { ...data, updatedAt: new Date().toISOString() });
+}
+
+export async function toggleVisited(id: string, visited: boolean): Promise<void> {
+  await db.circles.update(id, { visited, updatedAt: new Date().toISOString() });
 }
 
 export async function deleteCircle(id: string): Promise<void> {

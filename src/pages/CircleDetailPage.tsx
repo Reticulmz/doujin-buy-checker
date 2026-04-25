@@ -1,10 +1,16 @@
-import { createSignal, createMemo, For, Show } from "solid-js";
+import { createSignal, createResource, For, Show } from "solid-js";
 import { A, useParams, useNavigate } from "@solidjs/router";
 import { useLiveQuery } from "~/hooks/useLiveQuery";
-import { db, type BuyListItem } from "~/db/schema";
+import { db } from "~/db/schema";
 import { updateCircle, deleteCircle } from "~/db/repositories/circles";
 import { createItem, updateItem, togglePurchased, deleteItem } from "~/db/repositories/buyListItems";
-import { validateSpace, normalizeSpace, inferM3Hall, EVENT_PRESETS } from "~/services/eventPresets";
+import { validateSpace, inferM3Hall, EVENT_PRESETS } from "~/services/eventPresets";
+import { QuickAddItemForm } from "~/components/QuickAddItemForm";
+import { confirm } from "~/components/ConfirmDialog";
+import { showToast } from "~/components/Toast";
+import { ArrowLeft, MapPin, SquareCheckBig, Square, StickyNote, X } from "~/components/icons";
+import { ListSkeleton } from "~/components/Skeleton";
+import { ItemTypeBadge, NewBadge } from "~/components/ItemBadges";
 
 export default function CircleDetailPage() {
   const params = useParams();
@@ -19,6 +25,20 @@ export default function CircleDetailPage() {
   const eventType = () => event()?.eventType ?? "custom";
   const preset = () => EVENT_PRESETS[eventType()];
 
+  // Load catalog circle data for sync display
+  const [catalogCircle] = createResource(
+    () => ({ catalogId: circle()?.catalogSourceId, externalId: circle()?.externalId }),
+    async ({ catalogId, externalId }) => {
+      if (!catalogId || !externalId) return null;
+      const stored = await db.storedCatalogs.get(catalogId);
+      if (!stored) return null;
+      try {
+        const data = JSON.parse(stored.data);
+        return (data.circles ?? []).find((c: any) => c.id === externalId) ?? null;
+      } catch { return null; }
+    }
+  );
+
   const [editing, setEditing] = createSignal(false);
   const [showAddItem, setShowAddItem] = createSignal(false);
 
@@ -28,16 +48,11 @@ export default function CircleDetailPage() {
   const [spaceNumber, setSpaceNumber] = createSignal("");
   const [hall, setHall] = createSignal("");
   const [genre, setGenre] = createSignal("");
-  const [url, setUrl] = createSignal("");
+  const [websiteUrl, setWebsiteUrl] = createSignal("");
   const [twitterUrl, setTwitterUrl] = createSignal("");
   const [description, setDescription] = createSignal("");
 
-  // Item add fields
-  const [itemName, setItemName] = createSignal("新刊");
-  const [itemPrice, setItemPrice] = createSignal(1000);
-  const [itemQuantity, setItemQuantity] = createSignal(1);
-  const [itemPriority, setItemPriority] = createSignal<1 | 2 | 3>(1);
-  const [itemNote, setItemNote] = createSignal("");
+  // Item add fields managed by QuickAddItemForm
 
   const startEdit = () => {
     const c = circle();
@@ -47,7 +62,7 @@ export default function CircleDetailPage() {
     setSpaceNumber(c.spaceNumber);
     setHall(c.hall);
     setGenre(c.genre);
-    setUrl(c.url);
+    setWebsiteUrl(c.websiteUrl);
     setTwitterUrl(c.twitterUrl);
     setDescription(c.description);
     setEditing(true);
@@ -60,7 +75,7 @@ export default function CircleDetailPage() {
       spaceNumber: spaceNumber().trim(),
       hall: hall().trim(),
       genre: genre().trim(),
-      url: url().trim(),
+      websiteUrl: websiteUrl().trim(),
       twitterUrl: twitterUrl().trim(),
       description: description().trim(),
     });
@@ -68,51 +83,55 @@ export default function CircleDetailPage() {
   };
 
   const handleDelete = async () => {
-    if (confirm("このサークルを削除しますか？")) {
+    const ok = await confirm({
+      title: "サークルを削除",
+      description: "このサークルと関連する購入予定品をすべて削除しますか？",
+      confirmLabel: "削除",
+      variant: "danger",
+    });
+    if (ok) {
       await deleteCircle(params.circleId);
       navigate(`/event/${params.eventId}`, { replace: true });
     }
   };
 
-  const handleAddItem = async (e: SubmitEvent) => {
-    e.preventDefault();
+  const handleAddItem = async (item: { itemName: string; price: number; itemType: string; isNew: boolean; priority: 1 | 2 | 3; requestedBy: string }) => {
     await createItem({
       eventId: params.eventId,
       circleId: params.circleId,
-      itemName: itemName().trim(),
-      price: itemPrice(),
-      quantity: itemQuantity(),
-      priority: itemPriority(),
-      note: itemNote().trim(),
+      itemName: item.itemName,
+      itemType: item.itemType,
+      isNew: item.isNew,
+      price: item.price,
+      quantity: 1,
+      priority: item.priority,
+      note: "",
+      requestedBy: item.requestedBy,
     });
-    setItemName("新刊");
-    setItemPrice(1000);
-    setItemQuantity(1);
-    setItemPriority(1);
-    setItemNote("");
     setShowAddItem(false);
   };
 
-  const handleDeleteItem = async (id: string) => {
+  const handleDeleteItem = async (id: string, name: string) => {
+    const ok = await confirm({
+      title: "頒布物を削除",
+      description: `「${name}」を削除しますか？`,
+      confirmLabel: "削除",
+      variant: "danger",
+    });
+    if (!ok) return;
     await deleteItem(id);
   };
 
-  const priorityOptions = [
-    { value: 1, label: "必須" },
-    { value: 2, label: "欲しい" },
-    { value: 3, label: "余裕があれば" },
-  ];
-
   return (
     <div class="max-w-lg mx-auto">
-      <Show when={circle()} fallback={<div class="p-4 text-center">読み込み中...</div>}>
+      <Show when={circle()} fallback={<ListSkeleton />}>
         {(c) => (
           <>
             {/* Header */}
-            <div class="px-4 pt-3 pb-2 border-b border-gray-200 dark:border-gray-700">
+            <div class="sticky top-0 glass z-10 px-4 pt-3 pb-2">
               <div class="flex items-center gap-2">
-                <A href={`/event/${params.eventId}`} class="text-gray-500 touch-target">
-                  ←
+                <A href={`/event/${params.eventId}`} class="text-gray-500 touch-target" aria-label="戻る">
+                  <ArrowLeft size={20} />
                 </A>
                 <h1 class="text-lg font-bold truncate flex-1">{c().name}</h1>
                 <button class="text-sm text-primary-600" onClick={startEdit}>
@@ -121,7 +140,17 @@ export default function CircleDetailPage() {
               </div>
               <div class="flex items-center gap-3 ml-10 text-sm text-gray-500">
                 <Show when={c().spaceNumber}>
-                  <span>📍 {c().spaceNumber}</span>
+                  <span class="flex items-center gap-0.5"><MapPin size={14} /> {c().spaceNumber}</span>
+                </Show>
+                <Show when={c().websiteUrl}>
+                  <a
+                    href={c().websiteUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-primary-600 dark:text-primary-400 hover:underline"
+                  >
+                    Web
+                  </a>
                 </Show>
                 <Show when={c().twitterUrl}>
                   <a
@@ -135,6 +164,73 @@ export default function CircleDetailPage() {
                 </Show>
               </div>
             </div>
+
+            {/* Catalog info */}
+            <Show when={catalogCircle() && !editing()}>
+              {(cat) => (
+                <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-800/30 space-y-2">
+                  <Show when={cat().description}>
+                    <p class="text-sm text-gray-600 dark:text-gray-400 leading-relaxed">{cat().description}</p>
+                  </Show>
+                  <Show when={cat().items?.length > 0}>
+                    <div>
+                      <p class="text-xs font-medium text-gray-500 mb-1">カタログ頒布物（タップで追加）</p>
+                      <div class="flex flex-wrap gap-1.5">
+                        <For each={cat().items}>
+                          {(item: any) => {
+                            const isAdded = () => items()?.some((i) => i.itemName === item.name) ?? false;
+                            return (
+                              <button
+                                class="text-xs px-2 py-0.5 rounded-full border transition-colors"
+                                classList={{
+                                  "bg-primary-100 dark:bg-primary-900/40 border-primary-300 dark:border-primary-700 text-primary-700 dark:text-primary-300": isAdded(),
+                                  "bg-white dark:bg-gray-700 border-gray-200 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:border-primary-400 hover:text-primary-600": !isAdded(),
+                                }}
+                                onClick={async () => {
+                                  if (isAdded()) return;
+                                  await createItem({
+                                    eventId: params.eventId,
+                                    circleId: params.circleId,
+                                    itemName: item.name,
+                                    itemType: item.type ?? "",
+                                    isNew: item.isNew ?? false,
+                                    price: item.price ?? 0,
+                                    quantity: 1,
+                                    priority: 2,
+                                    note: "",
+                                  });
+                                }}
+                              >
+                                <Show when={isAdded()}>
+                                  <span class="mr-0.5">✓</span>
+                                </Show>
+                                {item.name}
+                                <Show when={item.price}>
+                                  <span class="opacity-60 ml-1">¥{item.price.toLocaleString()}</span>
+                                </Show>
+                              </button>
+                            );
+                          }}
+                        </For>
+                      </div>
+                    </div>
+                  </Show>
+                  <Show when={cat().genre || cat().tags?.length > 0}>
+                    <div class="flex flex-wrap gap-1">
+                      <Show when={cat().genre}>
+                        <span class="text-xs px-1.5 py-0.5 rounded bg-primary-100 dark:bg-primary-900/40 text-primary-700 dark:text-primary-300">{cat().genre}</span>
+                      </Show>
+                      <For each={(cat().tags ?? []).slice(1)}>
+                        {(tag: string) => (
+                          <span class="text-xs px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-400">{tag}</span>
+                        )}
+                      </For>
+                    </div>
+                  </Show>
+                  <div class="text-xs text-gray-500">カタログから同期</div>
+                </div>
+              )}
+            </Show>
 
             {/* Edit form */}
             <Show when={editing()}>
@@ -182,15 +278,15 @@ export default function CircleDetailPage() {
                   </div>
                 </div>
                 <Show when={eventType() === "m3"}>
-                  <p class="text-xs text-gray-400">{preset().spaceHint}</p>
+                  <p class="text-xs text-gray-500">{preset().spaceHint}</p>
                 </Show>
                 <div>
                   <label class="block text-sm font-medium mb-1">ジャンル</label>
                   <input type="text" class="input-field" value={genre()} onInput={(e) => setGenre(e.currentTarget.value)} />
                 </div>
                 <div>
-                  <label class="block text-sm font-medium mb-1">URL</label>
-                  <input type="url" class="input-field" value={url()} onInput={(e) => setUrl(e.currentTarget.value)} />
+                  <label class="block text-sm font-medium mb-1">Webサイト</label>
+                  <input type="url" class="input-field" value={websiteUrl()} onInput={(e) => setWebsiteUrl(e.currentTarget.value)} placeholder="https://..." />
                 </div>
                 <div>
                   <label class="block text-sm font-medium mb-1">Twitter / X</label>
@@ -218,35 +314,13 @@ export default function CircleDetailPage() {
               </div>
 
               <Show when={showAddItem()}>
-                <form onSubmit={handleAddItem} class="card mb-4 space-y-3">
-                  <div>
-                    <label class="block text-sm font-medium mb-1">品名 *</label>
-                    <input type="text" class="input-field" value={itemName()} onInput={(e) => setItemName(e.currentTarget.value)} required />
-                  </div>
-                  <div class="grid grid-cols-3 gap-2">
-                    <div>
-                      <label class="block text-sm font-medium mb-1">価格</label>
-                      <input type="number" class="input-field" value={itemPrice()} onInput={(e) => setItemPrice(Number(e.currentTarget.value))} min="0" step="100" />
-                    </div>
-                    <div>
-                      <label class="block text-sm font-medium mb-1">数量</label>
-                      <input type="number" class="input-field" value={itemQuantity()} onInput={(e) => setItemQuantity(Number(e.currentTarget.value))} min="1" />
-                    </div>
-                    <div>
-                      <label class="block text-sm font-medium mb-1">優先度</label>
-                      <select class="input-field" value={itemPriority()} onChange={(e) => setItemPriority(Number(e.currentTarget.value) as 1 | 2 | 3)}>
-                        {priorityOptions.map((o) => (
-                          <option value={o.value}>{o.label}</option>
-                        ))}
-                      </select>
-                    </div>
-                  </div>
-                  <div>
-                    <label class="block text-sm font-medium mb-1">メモ</label>
-                    <input type="text" class="input-field" value={itemNote()} onInput={(e) => setItemNote(e.currentTarget.value)} />
-                  </div>
-                  <button type="submit" class="btn-primary w-full">追加</button>
-                </form>
+                <div class="card mb-4">
+                  <QuickAddItemForm
+                    defaults={{ priority: 1 }}
+                    onAdd={handleAddItem}
+                    onClose={() => setShowAddItem(false)}
+                  />
+                </div>
               </Show>
 
               <div class="space-y-2">
@@ -257,32 +331,41 @@ export default function CircleDetailPage() {
                       classList={{ "opacity-60": item.purchased }}
                     >
                       <button
-                        class="w-12 shrink-0 flex items-center justify-center border-r border-gray-200 dark:border-gray-700 touch-target"
+                        class="w-12 shrink-0 flex items-center justify-center border-r border-gray-200 dark:border-gray-700 touch-target select-none active:scale-95"
                         classList={{
                           "bg-green-50 dark:bg-green-900/30": item.purchased,
                         }}
                         onClick={() => togglePurchased(item.id, !item.purchased)}
                       >
-                        <span class="text-xl">{item.purchased ? "✅" : "⬜"}</span>
+                        {item.purchased
+                          ? <SquareCheckBig size={22} class="text-green-600 dark:text-green-400" />
+                          : <Square size={22} class="text-gray-400 dark:text-gray-500" />
+                        }
                       </button>
                       <div class="flex-1 p-3 min-w-0">
                         <div class="flex items-center gap-2">
                           <span class="font-medium truncate">{item.itemName}</span>
-                          <PriorityBadge priority={item.priority} />
+                          <ItemTypeBadge type={item.itemType} />
+                          <Show when={item.isNew}><NewBadge /></Show>
+                          <PrioritySelect priority={item.priority} onChange={(p) => updateItem(item.id, { priority: p })} />
+                          <Show when={item.requestedBy}>
+                            <span class="text-xs px-1.5 py-0.5 rounded-full bg-errand-muted dark:bg-errand-dark-muted text-errand dark:text-errand-dark-text font-medium">{item.requestedBy}</span>
+                          </Show>
                         </div>
-                        <div class="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                        <div class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 tabular-nums">
                           ¥{item.price.toLocaleString()} × {item.quantity} = ¥
                           {(item.price * item.quantity).toLocaleString()}
                           <Show when={item.note}>
-                            <span class="ml-2">📝 {item.note}</span>
+                            <span class="ml-2 inline-flex items-center gap-0.5"><StickyNote size={13} /> {item.note}</span>
                           </Show>
                         </div>
                       </div>
                       <button
-                        class="px-3 text-gray-400 hover:text-red-500 touch-target"
-                        onClick={() => handleDeleteItem(item.id)}
+                        class="px-3 text-gray-500 hover:text-red-500 touch-target"
+                        aria-label="削除"
+                        onClick={() => handleDeleteItem(item.id, item.itemName)}
                       >
-                        ✕
+                        <X size={18} />
                       </button>
                     </div>
                   )}
@@ -302,15 +385,20 @@ export default function CircleDetailPage() {
   );
 }
 
-function PriorityBadge(props: { priority: 1 | 2 | 3 }) {
-  const cls = () => {
-    switch (props.priority) {
-      case 1: return "bg-red-100 text-red-700 dark:bg-red-900 dark:text-red-300";
-      case 2: return "bg-yellow-100 text-yellow-700 dark:bg-yellow-900 dark:text-yellow-300";
-      case 3: return "bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300";
-    }
-  };
-  const label = () => ({ 1: "必須", 2: "欲しい", 3: "余裕" }[props.priority]);
+function priorityCls(p: 1 | 2 | 3) {
+  return { 1: "badge-priority-1", 2: "badge-priority-2", 3: "badge-priority-3" }[p];
+}
 
-  return <span class={`text-xs px-1.5 py-0.5 rounded-full ${cls()}`}>{label()}</span>;
+function PrioritySelect(props: { priority: 1 | 2 | 3; onChange: (p: 1 | 2 | 3) => void }) {
+  return (
+    <select
+      class={`border-0 cursor-pointer min-h-7 ${priorityCls(props.priority)}`}
+      value={props.priority}
+      onChange={(e) => props.onChange(Number(e.currentTarget.value) as 1 | 2 | 3)}
+    >
+      <option value={1}>必須</option>
+      <option value={2}>欲しい</option>
+      <option value={3}>余裕</option>
+    </select>
+  );
 }

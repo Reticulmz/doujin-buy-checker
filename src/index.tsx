@@ -4,6 +4,8 @@ import { render } from "solid-js/web";
 import { Router, Route } from "@solidjs/router";
 import { lazy } from "solid-js";
 import { AppShell } from "./components/AppShell";
+import { ToastRegion } from "./components/Toast";
+import { ConfirmDialog } from "./components/ConfirmDialog";
 
 const EventListPage = lazy(() => import("./pages/EventListPage"));
 const BuyListPage = lazy(() => import("./pages/BuyListPage"));
@@ -14,6 +16,11 @@ const TransferPage = lazy(() => import("./pages/TransferPage"));
 const SettingsPage = lazy(() => import("./pages/SettingsPage"));
 const CatalogEditorPage = lazy(() => import("./pages/CatalogEditorPage"));
 const CatalogBrowserPage = lazy(() => import("./pages/CatalogBrowserPage"));
+
+// Enable browser scroll restoration
+if ("scrollRestoration" in history) {
+  history.scrollRestoration = "auto";
+}
 
 // Apply saved theme on load
 const savedTheme = localStorage.getItem("theme");
@@ -26,6 +33,9 @@ if (
 
 render(
   () => (
+    <>
+    <ToastRegion />
+    <ConfirmDialog />
     <Router root={AppShell}>
       <Route path="/" component={EventListPage} />
       <Route path="/event/:eventId" component={BuyListPage} />
@@ -37,6 +47,7 @@ render(
       <Route path="/catalog-editor" component={CatalogEditorPage} />
       <Route path="/catalog-browse" component={CatalogBrowserPage} />
     </Router>
+    </>
   ),
   document.getElementById("app")!
 );

@@ -47,7 +47,7 @@ export default function TransferPage() {
       const items = await db.buyListItems.where("eventId").equals(eventId).toArray();
 
       const payload = { event, circles, items };
-      const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+      const encoded = btoa(new TextEncoder().encode(JSON.stringify(payload)).reduce((s, b) => s + String.fromCharCode(b), ""));
 
       try {
         // API経由で転送
@@ -90,8 +90,16 @@ export default function TransferPage() {
         return;
       }
 
-      const json = decodeURIComponent(escape(atob(encoded)));
-      const payload = JSON.parse(json);
+      let payload: any;
+      try {
+        const binary = atob(encoded);
+        const bytes = Uint8Array.from(binary, (c) => c.charCodeAt(0));
+        const json = new TextDecoder().decode(bytes);
+        payload = JSON.parse(json);
+      } catch {
+        setStatus("データの復号に失敗しました。コードが正しいか確認してください。");
+        return;
+      }
 
       await db.transaction("rw", [db.events, db.circles, db.buyListItems], async () => {
         if (payload.event) await db.events.put(payload.event);
@@ -113,22 +121,22 @@ export default function TransferPage() {
       <h1 class="text-xl font-bold mb-4">データ転送</h1>
 
       {/* Mode tabs */}
-      <div class="flex rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700 mb-4">
+      <div class="flex gap-2 p-1 rounded-2xl bg-gray-100 dark:bg-gray-800 mb-4">
         <button
-          class="flex-1 py-2 text-sm font-medium transition-colors"
+          class="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all"
           classList={{
-            "!bg-primary-600 !text-white": mode() === "send",
-            "!bg-white dark:!bg-gray-800": mode() !== "send",
+            "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm": mode() === "send",
+            "text-gray-500 dark:text-gray-400": mode() !== "send",
           }}
           onClick={() => { setMode("send"); setStatus(""); }}
         >
           送信（PC）
         </button>
         <button
-          class="flex-1 py-2 text-sm font-medium transition-colors"
+          class="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all"
           classList={{
-            "!bg-primary-600 !text-white": mode() === "receive",
-            "!bg-white dark:!bg-gray-800": mode() !== "receive",
+            "bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 shadow-sm": mode() === "receive",
+            "text-gray-500 dark:text-gray-400": mode() !== "receive",
           }}
           onClick={() => { setMode("receive"); setStatus(""); }}
         >

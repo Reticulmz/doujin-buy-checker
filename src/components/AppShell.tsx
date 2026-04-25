@@ -1,23 +1,26 @@
-import { type ParentComponent } from "solid-js";
+import { type ParentComponent, type JSX } from "solid-js";
 import { A, useLocation } from "@solidjs/router";
+import { ClipboardList, BookOpen, RefreshCw, Settings } from "lucide-solid";
 import { InstallBanner } from "./InstallBanner";
+import { OfflineBadge } from "./OfflineBadge";
 
 export const AppShell: ParentComponent = (props) => {
   const location = useLocation();
 
-  const navItems = [
-    { href: "/", icon: "📋", label: "イベント" },
-    { href: "/catalogs", icon: "📚", label: "カタログ" },
-    { href: "/transfer", icon: "🔄", label: "転送" },
-    { href: "/settings", icon: "⚙️", label: "設定" },
+  const navItems: { href: string; icon: (p: { size: number }) => JSX.Element; label: string }[] = [
+    { href: "/", icon: (p) => <ClipboardList size={p.size} />, label: "イベント" },
+    { href: "/catalogs", icon: (p) => <BookOpen size={p.size} />, label: "カタログ" },
+    { href: "/transfer", icon: (p) => <RefreshCw size={p.size} />, label: "転送" },
+    { href: "/settings", icon: (p) => <Settings size={p.size} />, label: "設定" },
   ];
 
   return (
-    <div class="min-h-screen flex flex-col">
+    <div class="min-h-dvh flex flex-col">
       <InstallBanner />
-      <main class="flex-1 pb-16">{props.children}</main>
-      <nav class="fixed bottom-0 left-0 right-0 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 z-50">
-        <div class="flex justify-around items-center h-14 max-w-lg mx-auto">
+      <OfflineBadge />
+      <main class="flex-1 pb-18">{props.children}</main>
+      <nav class="fixed bottom-0 left-0 right-0 glass z-50">
+        <div class="flex justify-around items-center h-16 max-w-lg mx-auto px-2">
           {navItems.map((item) => {
             const isActive = () =>
               item.href === "/"
@@ -26,14 +29,14 @@ export const AppShell: ParentComponent = (props) => {
             return (
               <A
                 href={item.href}
-                class="flex flex-col items-center justify-center gap-0.5 touch-target text-xs transition-colors"
+                class="relative flex flex-col items-center justify-center gap-0.5 w-16 h-14 rounded-xl text-xs transition-all active:scale-95"
                 classList={{
-                  "text-primary-600 dark:text-primary-400 font-bold": isActive(),
-                  "text-gray-500 dark:text-gray-400": !isActive(),
+                  "text-primary-600 dark:text-primary-400 font-bold bg-primary-50 dark:bg-primary-900/30": isActive(),
+                  "text-gray-400 dark:text-gray-500 hover:text-gray-600 dark:hover:text-gray-300": !isActive(),
                 }}
               >
-                <span class="text-lg">{item.icon}</span>
-                <span>{item.label}</span>
+                {item.icon({ size: 20 })}
+                <span class="mt-0.5">{item.label}</span>
               </A>
             );
           })}

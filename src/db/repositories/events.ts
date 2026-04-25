@@ -10,11 +10,12 @@ export async function getEvent(id: string): Promise<Event | undefined> {
 }
 
 export async function createEvent(
-  data: Pick<Event, "name" | "date" | "venue" | "budget" | "eventType">
+  data: Pick<Event, "name" | "date" | "venue" | "budget" | "eventType"> & Partial<Pick<Event, "sourceCatalogId">>
 ): Promise<Event> {
   const now = new Date().toISOString();
   const event: Event = {
     id: ulid(),
+    sourceCatalogId: null,
     ...data,
     createdAt: now,
     updatedAt: now,

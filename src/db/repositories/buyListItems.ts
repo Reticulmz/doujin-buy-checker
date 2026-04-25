@@ -10,11 +10,14 @@ export async function getItemsByCircle(circleId: string): Promise<BuyListItem[]>
 }
 
 export async function createItem(
-  data: Pick<BuyListItem, "eventId" | "circleId" | "itemName" | "price" | "quantity" | "priority" | "note">
+  data: Pick<BuyListItem, "eventId" | "circleId" | "itemName" | "price" | "quantity" | "priority" | "note"> & Partial<Pick<BuyListItem, "itemType" | "isNew" | "requestedBy">>
 ): Promise<BuyListItem> {
   const now = new Date().toISOString();
   const item: BuyListItem = {
     id: ulid(),
+    itemType: "",
+    isNew: false,
+    requestedBy: "",
     ...data,
     purchased: false,
     purchasedAt: null,
@@ -27,7 +30,7 @@ export async function createItem(
 
 export async function updateItem(
   id: string,
-  data: Partial<Pick<BuyListItem, "itemName" | "price" | "quantity" | "priority" | "note">>
+  data: Partial<Pick<BuyListItem, "itemName" | "price" | "quantity" | "priority" | "note" | "requestedBy">>
 ): Promise<void> {
   await db.buyListItems.update(id, { ...data, updatedAt: new Date().toISOString() });
 }

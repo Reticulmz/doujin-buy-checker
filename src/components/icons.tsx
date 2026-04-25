@@ -1,0 +1,20 @@
+/** 共通アイコンラッパー — lucide-solid の tree-shaking import を1箇所に集約 */
+export {
+  ArrowLeft,
+  BookOpen,
+  Calendar,
+  SquareCheckBig,
+  ClipboardList,
+  MapPin,
+  Pencil,
+  Plus,
+  RefreshCw,
+  Settings,
+  Square,
+  StickyNote,
+  Trash2,
+  User,
+  Users,
+  Wallet,
+  X,
+} from "lucide-solid";
