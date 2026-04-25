@@ -8,3 +8,4 @@ devenv.lock
 *.local
 .env
 .env.*
+wrangler.toml
