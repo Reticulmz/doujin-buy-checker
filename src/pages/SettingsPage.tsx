@@ -108,23 +108,24 @@ export default function SettingsPage() {
           </div>
         </Show>
         <Show when={!pwaInstalled()}>
-          <div class="card">
-            <h2 class="font-bold mb-2">アプリをインストール</h2>
-            <p class="text-sm text-gray-500 mb-3">
+          <div class="card space-y-3">
+            <h2 class="font-bold">アプリをインストール</h2>
+            <p class="text-sm text-gray-500">
               ホーム画面に追加すると、会場でネット接続なしでも使えます
             </p>
-            <button
-              class="btn-primary w-full text-sm"
-              onClick={async () => {
-                if (canInstall()) {
-                  await promptInstall();
-                } else {
-                  alert("お使いのブラウザが自動インストールに対応していない場合は、ブラウザのメニューから「ホーム画面に追加」でインストールしてください。");
-                }
-              }}
-            >
-              インストール
-            </button>
+            <Show when={canInstall()}>
+              <button
+                class="btn-primary w-full text-sm"
+                onClick={() => promptInstall()}
+              >
+                インストール
+              </button>
+            </Show>
+            <div class="text-sm text-gray-500 space-y-1.5 border-t border-gray-200 dark:border-gray-700 pt-3">
+              <p class="font-medium text-gray-600 dark:text-gray-400">手動でインストール:</p>
+              <p>Chrome: アドレスバー右の <span class="inline-block border border-gray-300 dark:border-gray-600 rounded px-1 text-xs align-middle">⊕</span> アイコン、またはメニュー「︙」→「アプリをインストール」</p>
+              <p>Safari: 共有ボタン <span class="inline-block border border-gray-300 dark:border-gray-600 rounded px-1 text-xs align-middle">↑</span> →「ホーム画面に追加」</p>
+            </div>
           </div>
         </Show>
 
