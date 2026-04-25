@@ -74,8 +74,18 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ["**/*.{js,css,html,svg,png,woff2}"],
+        // 初回はシェルに必要な最小限のみプリキャッシュ
+        globPatterns: ["**/*.{css,html,svg,png,woff2}", "assets/index-*.js"],
         runtimeCaching: [
+          {
+            // lazy loadされるページチャンクはナビゲーション時にキャッシュ
+            urlPattern: /\/assets\/.+\.js$/,
+            handler: "StaleWhileRevalidate",
+            options: {
+              cacheName: "page-chunks",
+              expiration: { maxEntries: 50, maxAgeSeconds: 60 * 60 * 24 * 30 },
+            },
+          },
           {
             urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
             handler: "CacheFirst",
@@ -91,6 +101,11 @@ export default defineConfig({
   ],
   build: {
     rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes("lucide-solid")) return "icons";
+        },
+      },
       plugins: [
         license({
           thirdParty: {

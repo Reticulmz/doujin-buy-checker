@@ -1,6 +1,6 @@
 import { type ParentComponent, type JSX } from "solid-js";
 import { A, useLocation } from "@solidjs/router";
-import { ClipboardList, BookOpen, RefreshCw, Settings } from "lucide-solid";
+import { ClipboardList, BookOpen, RefreshCw, Settings } from "~/components/icons";
 import { InstallBanner } from "./InstallBanner";
 import { OfflineBadge } from "./OfflineBadge";
 
