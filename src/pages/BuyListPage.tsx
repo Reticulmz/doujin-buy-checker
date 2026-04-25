@@ -359,37 +359,40 @@ export default function BuyListPage() {
                         href={`/event/${params.eventId}/circle/${ci.circle.id}`}
                         class="flex-1 p-3 min-w-0"
                       >
-                        <div class="flex items-center gap-2">
-                          <span class="font-bold truncate">{ci.circle.name}</span>
+                        <div class="flex items-center gap-2 min-w-0">
+                          <span class="font-bold truncate min-w-0">{ci.circle.name}</span>
                           <Show when={ci.items.length > 0} fallback={
-                            <span class="text-xs px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-medium">巡回</span>
+                            <span class="text-xs px-1.5 py-0.5 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400 font-medium shrink-0">巡回</span>
                           }>
-                            {priorityBadge(ci.highestPriority)}
+                            <span class="shrink-0">{priorityBadge(ci.highestPriority)}</span>
                           </Show>
                         </div>
-                        <div class="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400 mt-1 tabular-nums">
+                        <div class="flex items-center gap-2.5 text-sm text-gray-500 dark:text-gray-400 mt-1 tabular-nums">
                           <Show when={ci.circle.spaceNumber}>
-                            <span class="flex items-center gap-1">
+                            <span class="flex items-center gap-1 shrink-0">
                               <MapPin size={13} />
                               {ci.circle.spaceNumber}
                               <Show when={ci.circle.hall}>{hallLabel(ci.circle.hall)}</Show>
                             </span>
                           </Show>
-                          <Show when={ci.circle.author}>
-                            <span class="truncate flex items-center gap-0.5"><User size={13} /> {ci.circle.author}</span>
+                          <Show when={ci.items.length > 0}>
+                            <span class="shrink-0">¥{ci.totalPrice.toLocaleString()}</span>
                           </Show>
                           <Show when={ci.items.length > 0}>
-                            <span>¥{ci.totalPrice.toLocaleString()}</span>
-                          </Show>
-                          <Show when={ci.items.length > 0}>
-                            <span>
+                            <span class="shrink-0">
                               {ci.items.filter((i) => i.purchased).length}/{ci.items.length}品
                             </span>
                           </Show>
                           <Show when={ci.items.some((i) => i.requestedBy)}>
-                            <span class="text-errand dark:text-errand-dark-text flex items-center gap-0.5"><Users size={13} />{ci.items.filter((i) => i.requestedBy).length}</span>
+                            <span class="text-errand dark:text-errand-dark-text flex items-center gap-0.5 shrink-0"><Users size={13} />{ci.items.filter((i) => i.requestedBy).length}</span>
                           </Show>
                         </div>
+                        <Show when={ci.circle.author}>
+                          <div class="flex items-center gap-1 text-xs text-gray-400 dark:text-gray-500 mt-0.5">
+                            <User size={12} class="shrink-0" />
+                            <span class="truncate">{ci.circle.author}</span>
+                          </div>
+                        </Show>
                       </A>
 
                       {/* Quick add item button */}
