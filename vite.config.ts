@@ -53,6 +53,7 @@ export default defineConfig({
     VitePWA({
       registerType: "autoUpdate",
       includeAssets: ["favicon.svg"],
+      devOptions: { enabled: true },
       manifest: {
         name: "同人即売会 購入チェッカー",
         short_name: "購入チェッカー",
