@@ -37,6 +37,7 @@ interface PickedItem {
   itemIndex: number | null;
   visitOnly?: boolean;
   priority: 1 | 2 | 3;
+  requestedBy?: string;
 }
 
 export default function CatalogBrowserPage() {
@@ -230,7 +231,6 @@ export default function CatalogBrowserPage() {
           } else {
             circleId = ulid();
             const spaceRaw = catCircle.space?.raw ?? "";
-            const isVisitOnly = picked.some((p) => p.circleId === catCircle.id && p.visitOnly);
             await db.circles.add({
               id: circleId,
               eventId,
@@ -244,7 +244,7 @@ export default function CatalogBrowserPage() {
               websiteUrl: catCircle.urls?.website ?? "",
               twitterUrl: catCircle.urls?.twitter ?? "",
               description: catCircle.description ?? "",
-              visited: isVisitOnly,
+              visited: false,
               createdAt: now,
               updatedAt: now,
             });
@@ -271,7 +271,7 @@ export default function CatalogBrowserPage() {
               priority: p.priority,
               purchased: false,
               purchasedAt: null,
-              requestedBy: "",
+              requestedBy: p.requestedBy ?? "",
               note: "",
               createdAt: now,
               updatedAt: now,
@@ -314,7 +314,7 @@ export default function CatalogBrowserPage() {
     alert(`${updated} 件のサークル情報を更新しました`);
   };
 
-  const addItemToCircle = async (circleId: string, item: { itemName: string; price: number; itemType: string; isNew: boolean; priority: 1 | 2 | 3 }) => {
+  const addItemToCircle = async (circleId: string, item: { itemName: string; price: number; itemType: string; isNew: boolean; priority: 1 | 2 | 3; requestedBy: string }) => {
     const circleIndex = circles.findIndex((c) => c.id === circleId);
     if (circleIndex < 0) return;
 
@@ -329,7 +329,7 @@ export default function CatalogBrowserPage() {
 
     // Auto-pick the newly added item
     const newItemIndex = (circles[circleIndex].items?.length ?? 1) - 1;
-    setPicked(produce((p) => p.push({ circleId, itemIndex: newItemIndex, priority: item.priority })));
+    setPicked(produce((p) => p.push({ circleId, itemIndex: newItemIndex, priority: item.priority, requestedBy: item.requestedBy })));
 
     // Persist to StoredCatalog
     const id = storedId();
