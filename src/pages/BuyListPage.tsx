@@ -156,7 +156,7 @@ export default function BuyListPage() {
       name: newCircleName().trim(),
       author: "",
       spaceNumber: newCircleSpace().trim(),
-      hall: "",
+      hall: event()?.eventType === "m3" ? inferM3Hall(newCircleSpace()) : "",
       genre: "",
       websiteUrl: "",
       twitterUrl: "",
@@ -181,6 +181,16 @@ export default function BuyListPage() {
     const cls = { 1: "badge-priority-1", 2: "badge-priority-2", 3: "badge-priority-3" };
     const labels = { 1: "必須", 2: "欲しい", 3: "余裕" };
     return <span class={cls[p]}>{labels[p]}</span>;
+  };
+
+  const hallLabel = (hall: string) => {
+    const map: Record<string, { short: string; cls: string }> = {
+      "第一展示場": { short: "第一", cls: "bg-blue-100 text-blue-700 dark:bg-blue-900/40 dark:text-blue-300" },
+      "第二展示場1F": { short: "第二1F", cls: "bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300" },
+      "第二展示場2F": { short: "第二2F", cls: "bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300" },
+    };
+    const info = map[hall] ?? { short: hall, cls: "bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300" };
+    return <span class={`text-[10px] leading-tight px-1 py-px rounded font-medium ${info.cls}`}>{info.short}</span>;
   };
 
   return (
@@ -281,7 +291,11 @@ export default function BuyListPage() {
                         </div>
                         <div class="flex items-center gap-3 text-sm text-gray-500 dark:text-gray-400 mt-1 tabular-nums">
                           <Show when={ci.circle.spaceNumber}>
-                            <span class="flex items-center gap-0.5"><MapPin size={13} /> {ci.circle.spaceNumber}</span>
+                            <span class="flex items-center gap-1">
+                              <MapPin size={13} />
+                              {ci.circle.spaceNumber}
+                              <Show when={ci.circle.hall}>{hallLabel(ci.circle.hall)}</Show>
+                            </span>
                           </Show>
                           <Show when={ci.circle.author}>
                             <span class="truncate flex items-center gap-0.5"><User size={13} /> {ci.circle.author}</span>
