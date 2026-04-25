@@ -1,7 +1,7 @@
 import { createSignal, onMount, Show } from "solid-js";
 import { db } from "~/db/schema";
 import { confirm } from "~/components/ConfirmDialog";
-import { canInstall, pwaInstalled, promptInstall } from "~/services/pwaInstall";
+import { canInstall, pwaInstalled, promptInstall, resetInstallState } from "~/services/pwaInstall";
 
 export default function SettingsPage() {
   const [theme, setTheme] = createSignal<"light" | "dark" | "system">("system");
@@ -91,9 +91,19 @@ export default function SettingsPage() {
         {/* PWA Install */}
         <Show when={pwaInstalled()}>
           <div class="card">
-            <div class="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 font-medium">
-              <span>✓</span>
-              <span>PWAとしてインストール済み</span>
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 font-medium">
+                <span>✓</span>
+                <span>PWAとしてインストール済み</span>
+              </div>
+              <button
+                class="text-xs text-gray-400 hover:text-gray-600"
+                onClick={() => {
+                  resetInstallState();
+                }}
+              >
+                リセット
+              </button>
             </div>
           </div>
         </Show>

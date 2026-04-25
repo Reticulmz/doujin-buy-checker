@@ -8,7 +8,8 @@ declare global {
 
 const [deferredPrompt, setDeferredPrompt] = createSignal<any>(null);
 const [isInstalled, setIsInstalled] = createSignal(
-  window.matchMedia("(display-mode: standalone)").matches
+  window.matchMedia("(display-mode: standalone)").matches ||
+  localStorage.getItem("pwa-installed") === "1"
 );
 
 // 早期捕捉済みイベントの回収
@@ -25,10 +26,16 @@ window.addEventListener("beforeinstallprompt", (e) => {
 window.addEventListener("appinstalled", () => {
   setIsInstalled(true);
   setDeferredPrompt(null);
+  localStorage.setItem("pwa-installed", "1");
 });
 
 export const canInstall = () => !!deferredPrompt() && !isInstalled();
 export const pwaInstalled = isInstalled;
+
+export function resetInstallState() {
+  localStorage.removeItem("pwa-installed");
+  setIsInstalled(false);
+}
 
 export async function promptInstall(): Promise<boolean> {
   const prompt = deferredPrompt();
