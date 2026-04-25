@@ -30,7 +30,7 @@ export async function createItem(
 
 export async function updateItem(
   id: string,
-  data: Partial<Pick<BuyListItem, "itemName" | "price" | "quantity" | "priority" | "note" | "requestedBy">>
+  data: Partial<Pick<BuyListItem, "itemName" | "price" | "quantity" | "priority" | "note" | "requestedBy" | "itemType" | "isNew">>
 ): Promise<void> {
   await db.buyListItems.update(id, { ...data, updatedAt: new Date().toISOString() });
 }

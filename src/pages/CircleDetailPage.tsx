@@ -1,14 +1,14 @@
 import { createSignal, createResource, For, Show } from "solid-js";
 import { A, useParams, useNavigate } from "@solidjs/router";
 import { useLiveQuery } from "~/hooks/useLiveQuery";
-import { db } from "~/db/schema";
+import { db, type BuyListItem } from "~/db/schema";
 import { updateCircle, deleteCircle } from "~/db/repositories/circles";
 import { createItem, updateItem, togglePurchased, deleteItem } from "~/db/repositories/buyListItems";
 import { validateSpace, inferM3Hall, EVENT_PRESETS } from "~/services/eventPresets";
-import { QuickAddItemForm } from "~/components/QuickAddItemForm";
+import { QuickAddItemForm, ITEM_TYPES } from "~/components/QuickAddItemForm";
 import { confirm } from "~/components/ConfirmDialog";
 import { showToast } from "~/components/Toast";
-import { ArrowLeft, MapPin, SquareCheckBig, Square, StickyNote, X } from "~/components/icons";
+import { ArrowLeft, MapPin, Pencil, SquareCheckBig, Square, StickyNote, X } from "~/components/icons";
 import { ListSkeleton } from "~/components/Skeleton";
 import { ItemTypeBadge, NewBadge } from "~/components/ItemBadges";
 
@@ -51,6 +51,42 @@ export default function CircleDetailPage() {
   const [websiteUrl, setWebsiteUrl] = createSignal("");
   const [twitterUrl, setTwitterUrl] = createSignal("");
   const [description, setDescription] = createSignal("");
+
+  // Item edit state
+  const [editingItemId, setEditingItemId] = createSignal<string | null>(null);
+  const [editItemName, setEditItemName] = createSignal("");
+  const [editPrice, setEditPrice] = createSignal(0);
+  const [editQuantity, setEditQuantity] = createSignal(1);
+  const [editItemType, setEditItemType] = createSignal("");
+  const [editIsNew, setEditIsNew] = createSignal(false);
+  const [editRequestedBy, setEditRequestedBy] = createSignal("");
+  const [editNote, setEditNote] = createSignal("");
+
+  const startEditItem = (item: BuyListItem) => {
+    setEditingItemId(item.id);
+    setEditItemName(item.itemName);
+    setEditPrice(item.price);
+    setEditQuantity(item.quantity);
+    setEditItemType(item.itemType);
+    setEditIsNew(item.isNew);
+    setEditRequestedBy(item.requestedBy);
+    setEditNote(item.note);
+  };
+
+  const saveEditItem = async () => {
+    const id = editingItemId();
+    if (!id) return;
+    await updateItem(id, {
+      itemName: editItemName().trim(),
+      price: editPrice(),
+      quantity: editQuantity(),
+      itemType: editItemType(),
+      isNew: editIsNew(),
+      requestedBy: editRequestedBy().trim(),
+      note: editNote().trim(),
+    });
+    setEditingItemId(null);
+  };
 
   // Item add fields managed by QuickAddItemForm
 
@@ -326,48 +362,126 @@ export default function CircleDetailPage() {
               <div class="space-y-2">
                 <For each={items()}>
                   {(item) => (
-                    <div
-                      class="card !p-0 flex items-stretch overflow-hidden"
-                      classList={{ "opacity-60": item.purchased }}
-                    >
-                      <button
-                        class="w-12 shrink-0 flex items-center justify-center border-r border-gray-200 dark:border-gray-700 touch-target select-none active:scale-95"
-                        classList={{
-                          "bg-green-50 dark:bg-green-900/30": item.purchased,
-                        }}
-                        onClick={() => togglePurchased(item.id, !item.purchased)}
+                    <Show when={editingItemId() === item.id} fallback={
+                      <div
+                        class="card !p-0 flex items-stretch overflow-hidden"
+                        classList={{ "opacity-60": item.purchased }}
                       >
-                        {item.purchased
-                          ? <SquareCheckBig size={22} class="text-green-600 dark:text-green-400" />
-                          : <Square size={22} class="text-gray-400 dark:text-gray-500" />
-                        }
-                      </button>
-                      <div class="flex-1 p-3 min-w-0">
-                        <div class="flex items-center gap-2">
-                          <span class="font-medium truncate">{item.itemName}</span>
-                          <ItemTypeBadge type={item.itemType} />
-                          <Show when={item.isNew}><NewBadge /></Show>
-                          <PrioritySelect priority={item.priority} onChange={(p) => updateItem(item.id, { priority: p })} />
-                          <Show when={item.requestedBy}>
-                            <span class="text-xs px-1.5 py-0.5 rounded-full bg-errand-muted dark:bg-errand-dark-muted text-errand dark:text-errand-dark-text font-medium">{item.requestedBy}</span>
-                          </Show>
+                        <button
+                          class="w-12 shrink-0 flex items-center justify-center border-r border-gray-200 dark:border-gray-700 touch-target select-none active:scale-95"
+                          classList={{
+                            "bg-green-50 dark:bg-green-900/30": item.purchased,
+                          }}
+                          onClick={() => togglePurchased(item.id, !item.purchased)}
+                        >
+                          {item.purchased
+                            ? <SquareCheckBig size={22} class="text-green-600 dark:text-green-400" />
+                            : <Square size={22} class="text-gray-400 dark:text-gray-500" />
+                          }
+                        </button>
+                        <div
+                          class="flex-1 p-3 min-w-0 cursor-pointer hover:bg-gray-50 dark:hover:bg-gray-700/20 transition-colors"
+                          onClick={() => startEditItem(item)}
+                        >
+                          <div class="flex items-center gap-2">
+                            <span class="font-medium truncate">{item.itemName}</span>
+                            <ItemTypeBadge type={item.itemType} />
+                            <Show when={item.isNew}><NewBadge /></Show>
+                            <PrioritySelect priority={item.priority} onChange={(p) => updateItem(item.id, { priority: p })} />
+                            <Show when={item.requestedBy}>
+                              <span class="text-xs px-1.5 py-0.5 rounded-full bg-errand-muted dark:bg-errand-dark-muted text-errand dark:text-errand-dark-text font-medium">{item.requestedBy}</span>
+                            </Show>
+                          </div>
+                          <div class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 tabular-nums">
+                            ¥{item.price.toLocaleString()} × {item.quantity} = ¥
+                            {(item.price * item.quantity).toLocaleString()}
+                            <Show when={item.note}>
+                              <span class="ml-2 inline-flex items-center gap-0.5"><StickyNote size={13} /> {item.note}</span>
+                            </Show>
+                          </div>
                         </div>
-                        <div class="text-sm text-gray-500 dark:text-gray-400 mt-0.5 tabular-nums">
-                          ¥{item.price.toLocaleString()} × {item.quantity} = ¥
-                          {(item.price * item.quantity).toLocaleString()}
-                          <Show when={item.note}>
-                            <span class="ml-2 inline-flex items-center gap-0.5"><StickyNote size={13} /> {item.note}</span>
-                          </Show>
+                        <button
+                          class="px-3 text-gray-500 hover:text-red-500 touch-target"
+                          aria-label="削除"
+                          onClick={() => handleDeleteItem(item.id, item.itemName)}
+                        >
+                          <X size={18} />
+                        </button>
+                      </div>
+                    }>
+                      {/* Inline edit form */}
+                      <div class="card space-y-2">
+                        <div class="flex gap-2">
+                          <input
+                            type="text"
+                            class="input-field flex-1 text-sm !py-1.5"
+                            placeholder="品名"
+                            value={editItemName()}
+                            onInput={(e) => setEditItemName(e.currentTarget.value)}
+                            autofocus
+                          />
+                          <div class="flex items-center gap-1">
+                            <span class="text-xs text-gray-500">¥</span>
+                            <input
+                              type="number"
+                              class="input-field !w-20 text-sm !py-1.5 tabular-nums text-right"
+                              value={editPrice()}
+                              onInput={(e) => setEditPrice(Number(e.currentTarget.value) || 0)}
+                              min="0"
+                              step="100"
+                            />
+                          </div>
+                          <div class="flex items-center gap-1">
+                            <span class="text-xs text-gray-500">×</span>
+                            <input
+                              type="number"
+                              class="input-field !w-12 text-sm !py-1.5 tabular-nums text-center"
+                              value={editQuantity()}
+                              onInput={(e) => setEditQuantity(Number(e.currentTarget.value) || 1)}
+                              min="1"
+                            />
+                          </div>
+                        </div>
+                        <div class="flex items-center gap-2 flex-wrap">
+                          <select
+                            class="input-field !py-1 text-xs !w-auto"
+                            value={editItemType()}
+                            onChange={(e) => setEditItemType(e.currentTarget.value)}
+                            aria-label="種別"
+                          >
+                            {ITEM_TYPES.map((t) => <option value={t.value}>{t.label}</option>)}
+                          </select>
+                          <label class="flex items-center gap-1 text-xs cursor-pointer select-none">
+                            <input
+                              type="checkbox"
+                              class="w-3.5 h-3.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500 cursor-pointer"
+                              checked={editIsNew()}
+                              onChange={(e) => setEditIsNew(e.currentTarget.checked)}
+                            />
+                            <span class="text-danger font-bold">NEW</span>
+                          </label>
+                          <input
+                            type="text"
+                            class="input-field !py-1 text-xs !w-16"
+                            placeholder="依頼者"
+                            aria-label="依頼者"
+                            value={editRequestedBy()}
+                            onInput={(e) => setEditRequestedBy(e.currentTarget.value)}
+                          />
+                        </div>
+                        <input
+                          type="text"
+                          class="input-field text-sm !py-1.5 w-full"
+                          placeholder="メモ"
+                          value={editNote()}
+                          onInput={(e) => setEditNote(e.currentTarget.value)}
+                        />
+                        <div class="flex gap-2">
+                          <button class="btn-primary text-xs !px-3 !py-1.5" onClick={saveEditItem}>保存</button>
+                          <button class="text-xs text-gray-500 hover:text-gray-700 px-2 py-1" onClick={() => setEditingItemId(null)}>キャンセル</button>
                         </div>
                       </div>
-                      <button
-                        class="px-3 text-gray-500 hover:text-red-500 touch-target"
-                        aria-label="削除"
-                        onClick={() => handleDeleteItem(item.id, item.itemName)}
-                      >
-                        <X size={18} />
-                      </button>
-                    </div>
+                    </Show>
                   )}
                 </For>
               </div>
