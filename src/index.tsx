@@ -1,11 +1,14 @@
 import "virtual:uno.css";
 import "@unocss/reset/tailwind.css";
+import { registerSW } from "virtual:pwa-register";
 import { render } from "solid-js/web";
 import { Router, Route } from "@solidjs/router";
 import { lazy } from "solid-js";
 import { AppShell } from "./components/AppShell";
 import { ToastRegion } from "./components/Toast";
 import { ConfirmDialog } from "./components/ConfirmDialog";
+
+registerSW({ immediate: true });
 
 const EventListPage = lazy(() => import("./pages/EventListPage"));
 const BuyListPage = lazy(() => import("./pages/BuyListPage"));
