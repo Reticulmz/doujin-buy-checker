@@ -98,7 +98,9 @@ export default function BuyListPage() {
       scrollRestored = true;
       const saved = sessionStorage.getItem(scrollKey);
       if (saved) {
-        requestAnimationFrame(() => window.scrollTo(0, Number(saved)));
+        const y = Number(saved);
+        // DOM描画完了を待つため二重rAF
+        requestAnimationFrame(() => requestAnimationFrame(() => window.scrollTo(0, y)));
         sessionStorage.removeItem(scrollKey);
       }
     }
