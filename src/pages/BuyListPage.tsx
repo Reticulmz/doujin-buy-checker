@@ -4,11 +4,12 @@ import { useLiveQuery } from "~/hooks/useLiveQuery";
 import { db, type BuyListItem } from "~/db/schema";
 import { createCircle, toggleVisited } from "~/db/repositories/circles";
 import { createItem, togglePurchased } from "~/db/repositories/buyListItems";
+import { updateEvent } from "~/db/repositories/events";
 import { calculateBudget } from "~/services/budgetCalculator";
 import { inferM3Hall } from "~/services/eventPresets";
 import { BudgetBar } from "~/components/BudgetBar";
 import { QuickAddItemForm } from "~/components/QuickAddItemForm";
-import { ArrowLeft, BookOpen, SquareCheckBig, MapPin, Plus, Square, User, Users } from "~/components/icons";
+import { ArrowLeft, BookOpen, Pencil, SquareCheckBig, MapPin, Plus, Square, User, Users } from "~/components/icons";
 import { ListSkeleton } from "~/components/Skeleton";
 
 type SortMode = "priority" | "space" | "name";
@@ -72,10 +73,39 @@ export default function BuyListPage() {
     })();
   });
 
-  const [sortMode, setSortMode] = createSignal<SortMode>("priority");
-  const [filterMode, setFilterMode] = createSignal<FilterMode>("all");
+  const stored = (() => {
+    try { return JSON.parse(localStorage.getItem("buylist-prefs") ?? "{}"); }
+    catch { return {}; }
+  })();
+  const [sortMode, setSortMode] = createSignal<SortMode>(stored.sort ?? "priority");
+  const [filterMode, setFilterMode] = createSignal<FilterMode>(stored.filter ?? "all");
   const [searchQuery, setSearchQuery] = createSignal("");
-  const [ownerFilter, setOwnerFilter] = createSignal<OwnerFilter>("all");
+  const [ownerFilter, setOwnerFilter] = createSignal<OwnerFilter>(stored.owner ?? "all");
+
+  createEffect(() => {
+    localStorage.setItem("buylist-prefs", JSON.stringify({
+      sort: sortMode(),
+      filter: filterMode(),
+      owner: ownerFilter(),
+    }));
+  });
+  const [editingName, setEditingName] = createSignal(false);
+  const [editName, setEditName] = createSignal("");
+
+  const startEditName = () => {
+    const e = event();
+    if (!e) return;
+    setEditName(e.name);
+    setEditingName(true);
+  };
+
+  const saveEditName = async () => {
+    const trimmed = editName().trim();
+    if (!trimmed) return;
+    await updateEvent(params.eventId, { name: trimmed });
+    setEditingName(false);
+  };
+
   const [showAddCircle, setShowAddCircle] = createSignal(false);
   const [newCircleName, setNewCircleName] = createSignal("");
   const [newCircleSpace, setNewCircleSpace] = createSignal("");
@@ -204,10 +234,32 @@ export default function BuyListPage() {
             <div class="sticky top-0 glass z-10 px-4 pt-3 pb-2">
               <div class="flex items-center gap-2 mb-2">
                 <A href="/" class="text-gray-500 touch-target" aria-label="戻る"><ArrowLeft size={20} /></A>
-                <h1 class="text-lg font-bold truncate flex-1">{ev().name}</h1>
+                <Show when={editingName()} fallback={
+                  <h1
+                    class="text-lg font-bold truncate flex-1 cursor-pointer hover:text-primary-600 transition-colors flex items-center gap-1 group"
+                    onClick={startEditName}
+                    title="クリックして名前を変更"
+                  >
+                    {ev().name}
+                    <Pencil size={14} class="text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+                  </h1>
+                }>
+                  <input
+                    type="text"
+                    class="input-field flex-1 text-lg font-bold !py-1"
+                    value={editName()}
+                    onInput={(e) => setEditName(e.currentTarget.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") saveEditName();
+                      if (e.key === "Escape") setEditingName(false);
+                    }}
+                    onBlur={saveEditName}
+                    autofocus
+                  />
+                </Show>
                 <A
                   href={`/event/${params.eventId}/budget`}
-                  class="text-sm text-primary-600 dark:text-primary-400"
+                  class="text-sm text-primary-600 dark:text-primary-400 shrink-0"
                 >
                   予算詳細
                 </A>
