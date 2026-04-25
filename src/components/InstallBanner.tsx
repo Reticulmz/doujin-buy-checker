@@ -1,54 +1,31 @@
-import { createSignal, onMount, onCleanup, Show } from "solid-js";
+import { createSignal, onMount, Show } from "solid-js";
 import { X } from "~/components/icons";
-
-declare global {
-  interface Window {
-    __pwaInstallPrompt: Event | null;
-  }
-}
+import { canInstall, pwaInstalled, promptInstall } from "~/services/pwaInstall";
 
 export function InstallBanner() {
-  const [deferredPrompt, setDeferredPrompt] = createSignal<any>(null);
   const [show, setShow] = createSignal(false);
-  const [installed, setInstalled] = createSignal(false);
+  const [justInstalled, setJustInstalled] = createSignal(false);
 
   onMount(() => {
     if (localStorage.getItem("pwa-install-dismissed")) return;
-    if (window.matchMedia("(display-mode: standalone)").matches) return;
+    if (pwaInstalled()) return;
+    if (canInstall()) setShow(true);
 
-    // index.html のインラインスクリプトで早期捕捉済みのイベントを回収
-    if (window.__pwaInstallPrompt) {
-      setDeferredPrompt(window.__pwaInstallPrompt);
-      window.__pwaInstallPrompt = null;
-      setShow(true);
-    }
-
-    const handleBeforeInstall = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
-      setShow(true);
-    };
-    const handleInstalled = () => {
-      setInstalled(true);
-      setTimeout(() => setShow(false), 3000);
-    };
-
-    window.addEventListener("beforeinstallprompt", handleBeforeInstall);
-    window.addEventListener("appinstalled", handleInstalled);
-
-    onCleanup(() => {
-      window.removeEventListener("beforeinstallprompt", handleBeforeInstall);
-      window.removeEventListener("appinstalled", handleInstalled);
-    });
+    // canInstall might become true later
+    const check = setInterval(() => {
+      if (canInstall() && !localStorage.getItem("pwa-install-dismissed")) {
+        setShow(true);
+        clearInterval(check);
+      }
+    }, 1000);
+    setTimeout(() => clearInterval(check), 30000);
   });
 
   const handleInstall = async () => {
-    const prompt = deferredPrompt();
-    if (!prompt) return;
-    prompt.prompt();
-    const result = await prompt.userChoice;
-    if (result.outcome === "accepted") {
-      setDeferredPrompt(null);
+    const accepted = await promptInstall();
+    if (accepted) {
+      setJustInstalled(true);
+      setTimeout(() => setShow(false), 3000);
     }
   };
 
@@ -61,7 +38,7 @@ export function InstallBanner() {
     <Show when={show()}>
       <div class="fixed top-0 left-0 right-0 z-50 p-3 safe-area-pt">
         <div class="max-w-lg mx-auto bg-primary-600 text-white rounded-xl shadow-xl p-4">
-          <Show when={!installed()} fallback={
+          <Show when={!justInstalled()} fallback={
             <div class="text-center text-sm font-medium">
               インストール完了！オフラインでも使えます
             </div>

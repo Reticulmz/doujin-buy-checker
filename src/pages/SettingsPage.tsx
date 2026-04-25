@@ -1,7 +1,8 @@
-import { createSignal, onMount } from "solid-js";
+import { createSignal, onMount, Show } from "solid-js";
 import { db } from "~/db/schema";
 import { confirm } from "~/components/ConfirmDialog";
 import { showToast } from "~/components/Toast";
+import { canInstall, pwaInstalled, promptInstall } from "~/services/pwaInstall";
 
 export default function SettingsPage() {
   const [theme, setTheme] = createSignal<"light" | "dark" | "system">("system");
@@ -88,6 +89,30 @@ export default function SettingsPage() {
       <h1 class="text-xl font-bold mb-4">設定</h1>
 
       <div class="space-y-4">
+        {/* PWA Install */}
+        <Show when={canInstall()}>
+          <div class="card">
+            <h2 class="font-bold mb-2">アプリをインストール</h2>
+            <p class="text-sm text-gray-500 mb-3">
+              ホーム画面に追加すると、会場でネット接続なしでも使えます
+            </p>
+            <button
+              class="btn-primary w-full text-sm"
+              onClick={() => promptInstall()}
+            >
+              インストール
+            </button>
+          </div>
+        </Show>
+        <Show when={pwaInstalled()}>
+          <div class="card">
+            <div class="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 font-medium">
+              <span>✓</span>
+              <span>PWAとしてインストール済み</span>
+            </div>
+          </div>
+        </Show>
+
         {/* Theme */}
         <div class="card">
           <h2 class="font-bold mb-2">テーマ</h2>
